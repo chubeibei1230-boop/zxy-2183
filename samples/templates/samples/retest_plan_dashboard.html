@@ -1,0 +1,1782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>蜡样复测计划排期与执行跟踪 - 香氛蜡样研发管理系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            color: #303133;
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 40px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 22px; font-weight: 600; }
+        .header p { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+        .header-actions { display: flex; gap: 12px; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 24px 40px; }
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 24px 0 16px;
+            padding-left: 10px;
+            border-left: 4px solid #667eea;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 16px;
+            margin-bottom: 8px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px 24px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .stat-card .stat-label {
+            font-size: 13px;
+            color: #909399;
+            margin-bottom: 8px;
+        }
+        .stat-card .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            line-height: 1.1;
+        }
+        .stat-card .stat-sub {
+            font-size: 12px;
+            color: #909399;
+            margin-top: 6px;
+        }
+        .stat-total { border-top: 3px solid #667eea; }
+        .stat-total .stat-value { color: #667eea; }
+        .stat-planned { border-top: 3px solid #909399; }
+        .stat-planned .stat-value { color: #909399; }
+        .stat-progress { border-top: 3px solid #e6a23c; }
+        .stat-progress .stat-value { color: #e6a23c; }
+        .stat-completed { border-top: 3px solid #67c23a; }
+        .stat-completed .stat-value { color: #67c23a; }
+        .stat-cancelled { border-top: 3px solid #c0c4cc; }
+        .stat-cancelled .stat-value { color: #c0c4cc; }
+        .stat-overdue { border-top: 3px solid #f56c6c; }
+        .stat-overdue .stat-value { color: #f56c6c; }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .panel {
+            background: white;
+            border-radius: 10px;
+            padding: 20px 24px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .panel-title { font-size: 15px; font-weight: 600; }
+        .chart-area {
+            height: 200px;
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ebeef5;
+            margin-bottom: 12px;
+        }
+        .chart-bar-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+        .chart-bar {
+            width: 100%;
+            max-width: 40px;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+            border-radius: 4px 4px 0 0;
+            min-height: 4px;
+            transition: all 0.3s;
+            position: relative;
+        }
+        .chart-bar:hover { opacity: 0.85; }
+        .chart-bar-label {
+            font-size: 11px;
+            color: #909399;
+            margin-top: auto;
+        }
+        .chart-legend {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            font-size: 12px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+        }
+
+        .filter-panel {
+            background: white;
+            border-radius: 10px;
+            padding: 20px 24px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            margin-bottom: 20px;
+        }
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .filter-item label {
+            display: block;
+            font-size: 12px;
+            color: #606266;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .filter-item input,
+        .filter-item select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #dcdfe6;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s;
+            background: white;
+        }
+        .filter-item input:focus,
+        .filter-item select:focus {
+            border-color: #667eea;
+        }
+        .filter-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-success {
+            background: #67c23a;
+            color: white;
+        }
+        .btn-success:hover { background: #5daf34; }
+        .btn-warning {
+            background: #e6a23c;
+            color: white;
+        }
+        .btn-warning:hover { background: #cf9236; }
+        .btn-danger {
+            background: #f56c6c;
+            color: white;
+        }
+        .btn-danger:hover { background: #dd6161; }
+        .btn-default {
+            background: white;
+            color: #606266;
+            border: 1px solid #dcdfe6;
+        }
+        .btn-default:hover { border-color: #667eea; color: #667eea; }
+        .btn-sm { padding: 4px 12px; font-size: 12px; }
+        .btn-lg { padding: 10px 28px; font-size: 14px; }
+
+        .table-panel {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+        .table-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #ebeef5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .table-title { font-size: 16px; font-weight: 600; }
+        .table-wrapper { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        thead {
+            background: #fafbfc;
+        }
+        th {
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: #606266;
+            border-bottom: 1px solid #ebeef5;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            background: #fafbfc;
+        }
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f2f6fc;
+            vertical-align: top;
+        }
+        tbody tr:hover { background: #f5f7fa; }
+        .tag {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .tag-planned { background: #f4f4f5; color: #909399; }
+        .tag-progress { background: #fdf6ec; color: #e6a23c; }
+        .tag-completed { background: #f0f9eb; color: #67c23a; }
+        .tag-cancelled { background: #f4f4f5; color: #c0c4cc; }
+        .tag-overdue { background: #fef0f0; color: #f56c6c; }
+        .tag-normal { background: #ecf5ff; color: #409eff; }
+        .tag-abnormal { background: #fef0f0; color: #f56c6c; }
+        .tag-warn { background: #fdf6ec; color: #e6a23c; }
+
+        .text-ellipsis {
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .text-muted { color: #909399; }
+        .text-danger { color: #f56c6c; }
+        .text-success { color: #67c23a; }
+        .text-warn { color: #e6a23c; }
+        .text-sm { font-size: 12px; }
+
+        .pagination {
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid #ebeef5;
+        }
+        .page-info { font-size: 13px; color: #606266; }
+        .page-buttons { display: flex; gap: 6px; }
+        .page-btn {
+            min-width: 32px;
+            height: 32px;
+            padding: 0 10px;
+            border: 1px solid #dcdfe6;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .page-btn.active {
+            background: #667eea;
+            border-color: #667eea;
+            color: white;
+        }
+        .page-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .modal-mask {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 40px 20px;
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        .modal-mask.active { display: flex; }
+        .modal {
+            background: white;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 900px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: slideUp 0.3s ease;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .modal-lg { max-width: 1100px; }
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #ebeef5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-title { font-size: 16px; font-weight: 600; }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: #909399;
+            cursor: pointer;
+            padding: 0;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+        }
+        .modal-close:hover { background: #f5f7fa; color: #303133; }
+        .modal-body {
+            padding: 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #ebeef5;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px 20px;
+        }
+        .form-grid-full { grid-column: 1 / -1; }
+        .form-item label {
+            display: block;
+            font-size: 13px;
+            color: #606266;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .form-item label .required { color: #f56c6c; margin-left: 2px; }
+        .form-item input,
+        .form-item select,
+        .form-item textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #dcdfe6;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+        .form-item input:focus,
+        .form-item select:focus,
+        .form-item textarea:focus {
+            border-color: #667eea;
+        }
+        .form-item textarea { resize: vertical; min-height: 80px; }
+        .form-tip {
+            font-size: 12px;
+            color: #909399;
+            margin-top: 4px;
+        }
+
+        .detail-section {
+            margin-bottom: 24px;
+        }
+        .detail-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #ebeef5;
+            color: #303133;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px 20px;
+        }
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .info-label {
+            font-size: 12px;
+            color: #909399;
+        }
+        .info-value {
+            font-size: 13px;
+            color: #303133;
+            word-break: break-all;
+        }
+
+        .timeline {
+            padding-left: 8px;
+        }
+        .timeline-item {
+            position: relative;
+            padding-left: 20px;
+            padding-bottom: 20px;
+            border-left: 2px solid #ebeef5;
+        }
+        .timeline-item:last-child { border-left-color: transparent; padding-bottom: 0; }
+        .timeline-dot {
+            position: absolute;
+            left: -7px;
+            top: 0;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #667eea;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px #667eea;
+        }
+        .timeline-dot.success { background: #67c23a; box-shadow: 0 0 0 2px #67c23a; }
+        .timeline-dot.warn { background: #e6a23c; box-shadow: 0 0 0 2px #e6a23c; }
+        .timeline-dot.danger { background: #f56c6c; box-shadow: 0 0 0 2px #f56c6c; }
+        .timeline-title {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .timeline-time {
+            font-size: 12px;
+            color: #909399;
+            margin-bottom: 6px;
+        }
+        .timeline-content {
+            font-size: 13px;
+            color: #606266;
+            line-height: 1.6;
+        }
+        .timeline-tags {
+            margin-top: 8px;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .alert-box {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .alert-danger {
+            background: #fef0f0;
+            border: 1px solid #fde2e2;
+            color: #f56c6c;
+        }
+        .alert-warn {
+            background: #fdf6ec;
+            border: 1px solid #faecd8;
+            color: #e6a23c;
+        }
+        .alert-info {
+            background: #ecf5ff;
+            border: 1px solid #d9ecff;
+            color: #409eff;
+        }
+
+        .action-links {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .link-btn {
+            background: none;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 13px;
+            padding: 0;
+        }
+        .link-btn:hover { text-decoration: underline; }
+        .link-btn.danger { color: #f56c6c; }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+            border-bottom: 2px solid #ebeef5;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #606266;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: #667eea; }
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: 600;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #909399;
+        }
+        .empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: #909399;
+        }
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
+        .toast {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            padding: 12px 20px;
+            border-radius: 6px;
+            color: white;
+            font-size: 13px;
+            z-index: 2000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: slideIn 0.3s ease;
+            display: none;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        .toast-success { background: #67c23a; }
+        .toast-error { background: #f56c6c; }
+        .toast-info { background: #409eff; }
+        .toast.show { display: block; }
+
+        .mini-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .mini-table th,
+        .mini-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #ebeef5;
+            text-align: left;
+        }
+        .mini-table th {
+            background: #fafbfc;
+            font-weight: 600;
+            color: #606266;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>📋 蜡样复测计划排期与执行跟踪</h1>
+            <p>从异常发现、计划安排、复测执行到最终结论的完整闭环管理</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-default" onclick="location.reload()">🔄 刷新数据</button>
+            <button class="btn btn-success btn-lg" onclick="openCreateModal()">+ 创建复测计划</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="statsContainer" class="stats-grid"></div>
+
+        <div class="section-title">📊 统计概览</div>
+        <div class="two-col">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">按计划状态分布</div>
+                </div>
+                <div id="statusChart" class="chart-area"></div>
+                <div id="statusLegend" class="chart-legend"></div>
+            </div>
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">按来源原因分布</div>
+                </div>
+                <div id="sourceChart" class="chart-area"></div>
+                <div id="sourceLegend" class="chart-legend"></div>
+            </div>
+        </div>
+
+        <div class="section-title">🔍 计划查询筛选</div>
+        <div class="filter-panel">
+            <div class="filter-grid">
+                <div class="filter-item">
+                    <label>测试批次</label>
+                    <input type="text" id="filterTestBatch" placeholder="输入批次号">
+                </div>
+                <div class="filter-item">
+                    <label>蜡样编号</label>
+                    <input type="text" id="filterSampleCode" placeholder="输入蜡样编号">
+                </div>
+                <div class="filter-item">
+                    <label>香型代号</label>
+                    <input type="text" id="filterFragrance" placeholder="输入香型">
+                </div>
+                <div class="filter-item">
+                    <label>杯型</label>
+                    <input type="text" id="filterCupType" placeholder="输入杯型">
+                </div>
+                <div class="filter-item">
+                    <label>芯线规格</label>
+                    <input type="text" id="filterWickSpec" placeholder="输入芯线规格">
+                </div>
+                <div class="filter-item">
+                    <label>负责人</label>
+                    <input type="text" id="filterResponsible" placeholder="输入负责人">
+                </div>
+                <div class="filter-item">
+                    <label>计划状态</label>
+                    <select id="filterPlanStatus">
+                        <option value="">全部状态</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label>来源原因</label>
+                    <select id="filterSource">
+                        <option value="">全部原因</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label>是否逾期</label>
+                    <select id="filterOverdue">
+                        <option value="">全部</option>
+                        <option value="true">已逾期</option>
+                        <option value="false">未逾期</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label>计划时间起</label>
+                    <input type="datetime-local" id="filterPlannedFrom">
+                </div>
+                <div class="filter-item">
+                    <label>计划时间止</label>
+                    <input type="datetime-local" id="filterPlannedTo">
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-default" onclick="resetFilters()">重置</button>
+                <button class="btn btn-primary" onclick="applyFilters()">查询</button>
+            </div>
+        </div>
+
+        <div class="section-title">📝 复测计划列表</div>
+        <div class="table-panel">
+            <div class="table-header">
+                <div class="table-title">
+                    共 <span id="totalCount" class="text-warn">0</span> 条计划
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="searchInput" placeholder="🔍 全局搜索..." style="padding:6px 12px;border:1px solid #dcdfe6;border-radius:6px;font-size:13px;width:240px;outline:none;">
+                    <button class="btn btn-primary btn-sm" onclick="openCreateModal()">+ 新建计划</button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>计划编号</th>
+                            <th>蜡样信息</th>
+                            <th>计划状态</th>
+                            <th>是否逾期</th>
+                            <th>计划复测时间</th>
+                            <th>负责人</th>
+                            <th>来源原因</th>
+                            <th>最近测试结果</th>
+                            <th>异常原因</th>
+                            <th>历史处理结论</th>
+                            <th>执行次数</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="planTableBody">
+                        <tr><td colspan="13" class="loading">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <div class="page-info" id="pageInfo"></div>
+                <div class="page-buttons" id="pageButtons"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-mask" id="createModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">创建复测计划</div>
+                <button class="modal-close" onclick="closeModal('createModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-item">
+                        <label>选择蜡样<span class="required">*</span></label>
+                        <select id="formWaxSample">
+                            <option value="">请选择蜡样</option>
+                        </select>
+                        <div class="form-tip">优先显示待复测和需改配的蜡样</div>
+                    </div>
+                    <div class="form-item">
+                        <label>计划复测时间<span class="required">*</span></label>
+                        <input type="datetime-local" id="formPlannedTime">
+                    </div>
+                    <div class="form-item">
+                        <label>负责人<span class="required">*</span></label>
+                        <input type="text" id="formResponsible" placeholder="请输入负责人姓名">
+                    </div>
+                    <div class="form-item">
+                        <label>创建人</label>
+                        <input type="text" id="formCreatedBy" placeholder="请输入创建人姓名">
+                    </div>
+                    <div class="form-item">
+                        <label>来源原因<span class="required">*</span></label>
+                        <select id="formSourceReason"></select>
+                    </div>
+                    <div class="form-item">
+                        <label>关联异常测试记录</label>
+                        <select id="formSourceBurnTest">
+                            <option value="">无（可选择关联的异常测试）</option>
+                        </select>
+                    </div>
+                    <div class="form-item form-grid-full">
+                        <label>复测目标</label>
+                        <textarea id="formRetestGoal" placeholder="请描述本次复测需要达成的目标，如：验证烟量是否降低至3级以下等"></textarea>
+                    </div>
+                    <div class="form-item form-grid-full">
+                        <label>注意事项</label>
+                        <textarea id="formAttentionNotes" placeholder="请描述复测过程中的注意事项，如：测试环境温度、点燃位置等"></textarea>
+                    </div>
+                    <div class="form-item form-grid-full">
+                        <label>原因说明</label>
+                        <textarea id="formSourceDetail" placeholder="请详细描述发起复测的具体原因"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-default" onclick="closeModal('createModal')">取消</button>
+                <button class="btn btn-primary" onclick="submitCreate()">确认创建</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-mask" id="detailModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <div class="modal-title" id="detailTitle">计划详情</div>
+                <button class="modal-close" onclick="closeModal('detailModal')">×</button>
+            </div>
+            <div class="modal-body" id="detailBody">
+                <div class="loading">加载中...</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-default" onclick="closeModal('detailModal')">关闭</button>
+                <button class="btn btn-warning" id="detailCancelBtn" onclick="openCancelModal()">取消计划</button>
+                <button class="btn btn-success" id="detailExecuteBtn" onclick="openExecuteModal()">执行复测</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-mask" id="executeModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">登记执行结果</div>
+                <button class="modal-close" onclick="closeModal('executeModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="executeAlertBox"></div>
+                <div class="form-grid">
+                    <div class="form-item">
+                        <label>实际复测时间<span class="required">*</span></label>
+                        <input type="datetime-local" id="execActualTime">
+                    </div>
+                    <div class="form-item">
+                        <label>执行人</label>
+                        <input type="text" id="execExecutedBy" placeholder="请输入执行人姓名">
+                    </div>
+                    <div class="form-item form-grid-full">
+                        <label>结果说明</label>
+                        <textarea id="execResultDesc" placeholder="请详细描述本次复测的结果和发现"></textarea>
+                    </div>
+                    <div class="form-item">
+                        <label>关联复测记录</label>
+                        <select id="execBurnTest">
+                            <option value="">无（可选择关联的燃烧测试记录）</option>
+                        </select>
+                    </div>
+                    <div class="form-item">
+                        <label>处理结论</label>
+                        <select id="execClosureAction">
+                            <option value="">暂不处理（仅登记执行）</option>
+                        </select>
+                        <div class="form-tip">选择处理结论后，将自动更新计划状态和蜡样状态</div>
+                    </div>
+                    <div class="form-item form-grid-full">
+                        <label>处理备注</label>
+                        <textarea id="execClosureRemark" placeholder="请输入处理结论的相关说明"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-default" onclick="closeModal('executeModal')">取消</button>
+                <button class="btn btn-primary" onclick="submitExecute()">确认提交</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-mask" id="cancelModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">取消复测计划</div>
+                <button class="modal-close" onclick="closeModal('cancelModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="alert-box alert-warn">
+                    ⚠️ 取消后计划将不可恢复，请谨慎操作！
+                </div>
+                <div class="form-grid">
+                    <div class="form-item form-grid-full">
+                        <label>取消原因<span class="required">*</span></label>
+                        <textarea id="cancelReason" placeholder="请详细描述取消该计划的原因" style="min-height:120px;"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-default" onclick="closeModal('cancelModal')">返回</button>
+                <button class="btn btn-danger" onclick="submitCancel()">确认取消计划</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API_BASE = '/api';
+        let currentPlanList = [];
+        let currentPage = 1;
+        const PAGE_SIZE = 10;
+        let currentDetailId = null;
+        let statusOptions = [];
+        let sourceOptions = [];
+        let closureOptions = [];
+        let summaryData = null;
+
+        function showToast(msg, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.className = `toast toast-${type} show`;
+            toast.textContent = msg;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        function openModal(id) {
+            document.getElementById(id).classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function formatDateTime(dt) {
+            if (!dt) return '-';
+            const d = new Date(dt);
+            if (isNaN(d.getTime())) return dt;
+            const pad = n => n.toString().padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function toLocalInputValue(dt) {
+            if (!dt) return '';
+            const d = new Date(dt);
+            const pad = n => n.toString().padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        async function apiGet(url) {
+            const res = await fetch(API_BASE + url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.json();
+        }
+
+        async function apiPost(url, data) {
+            const res = await fetch(API_BASE + url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error || result.detail || `HTTP ${res.status}`);
+            return result;
+        }
+
+        async function loadOptions() {
+            try {
+                const [statusRes, sourceRes] = await Promise.all([
+                    apiGet('/retest-plans/status-options/'),
+                    apiGet('/retest-plans/source-options/')
+                ]);
+                statusOptions = statusRes;
+                sourceOptions = sourceRes;
+
+                const fs = document.getElementById('filterPlanStatus');
+                statusOptions.forEach(o => {
+                    fs.innerHTML += `<option value="${o.value}">${o.label}</option>`;
+                });
+                const fso = document.getElementById('filterSource');
+                sourceOptions.forEach(o => {
+                    fso.innerHTML += `<option value="${o.value}">${o.label}</option>`;
+                });
+                const fsr = document.getElementById('formSourceReason');
+                sourceOptions.forEach(o => {
+                    fsr.innerHTML += `<option value="${o.value}">${o.label}</option>`;
+                });
+
+                const closureRes = await apiGet('/closure-samples/action-options/');
+                closureOptions = closureRes;
+                const eca = document.getElementById('execClosureAction');
+                closureOptions.forEach(o => {
+                    eca.innerHTML += `<option value="${o.value}">${o.label}</option>`;
+                });
+            } catch (e) {
+                console.error('加载选项失败:', e);
+            }
+        }
+
+        async function loadSummary() {
+            try {
+                summaryData = await apiGet('/retest-plans/summary/');
+                renderStats(summaryData);
+                renderStatusChart(summaryData.by_status);
+                renderSourceChart(summaryData.by_source);
+            } catch (e) {
+                console.error('加载统计数据失败:', e);
+            }
+        }
+
+        function renderStats(data) {
+            const container = document.getElementById('statsContainer');
+            const stats = [
+                { key: 'total_plans', label: '计划总数', cls: 'stat-total', sub: '全部复测计划' },
+                { key: 'planned_count', label: '待执行', cls: 'stat-planned', sub: '等待开始执行' },
+                { key: 'in_progress_count', label: '执行中', cls: 'stat-progress', sub: '正在复测中' },
+                { key: 'completed_count', label: '已完成', cls: 'stat-completed', sub: '已得出处理结论' },
+                { key: 'cancelled_count', label: '已取消', cls: 'stat-cancelled', sub: '计划已取消' },
+                { key: 'overdue_count', label: '已逾期', cls: 'stat-overdue', sub: '超计划时间未完成' },
+            ];
+            container.innerHTML = stats.map(s => `
+                <div class="stat-card ${s.cls}">
+                    <div class="stat-label">${s.label}</div>
+                    <div class="stat-value">${data[s.key] || 0}</div>
+                    <div class="stat-sub">${s.sub}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderStatusChart(data) {
+            const chart = document.getElementById('statusChart');
+            const legend = document.getElementById('statusLegend');
+            const colors = {
+                'planned': '#909399',
+                'in_progress': '#e6a23c',
+                'completed': '#67c23a',
+                'cancelled': '#c0c4cc'
+            };
+            const maxVal = Math.max(...data.map(d => d.count), 1);
+            chart.innerHTML = data.map(d => {
+                const h = Math.max((d.count / maxVal) * 160, 4);
+                return `
+                    <div class="chart-bar-group">
+                        <div class="chart-bar" style="height:${h}px;background:${colors[d.value]||'#667eea'};" title="${d.label}: ${d.count}"></div>
+                        <div class="chart-bar-label">${d.count}</div>
+                    </div>
+                `;
+            }).join('');
+            legend.innerHTML = data.map(d => `
+                <div class="legend-item">
+                    <span class="legend-color" style="background:${colors[d.value]||'#667eea'}"></span>
+                    ${d.label}
+                </div>
+            `).join('');
+        }
+
+        function renderSourceChart(data) {
+            const chart = document.getElementById('sourceChart');
+            const legend = document.getElementById('sourceLegend');
+            const palette = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe', '#43e97b', '#fa709a'];
+            const maxVal = Math.max(...data.map(d => d.count), 1);
+            chart.innerHTML = data.map((d, i) => {
+                const h = Math.max((d.count / maxVal) * 160, 4);
+                return `
+                    <div class="chart-bar-group">
+                        <div class="chart-bar" style="height:${h}px;background:${palette[i%palette.length]};" title="${d.label}: ${d.count}"></div>
+                        <div class="chart-bar-label">${d.count}</div>
+                    </div>
+                `;
+            }).join('');
+            legend.innerHTML = data.map((d, i) => `
+                <div class="legend-item">
+                    <span class="legend-color" style="background:${palette[i%palette.length]}"></span>
+                    ${d.label}
+                </div>
+            `).join('');
+        }
+
+        function buildFilterParams() {
+            const params = new URLSearchParams();
+            const fields = [
+                ['test_batch', 'filterTestBatch'],
+                ['sample_code', 'filterSampleCode'],
+                ['fragrance_code', 'filterFragrance'],
+                ['cup_type', 'filterCupType'],
+                ['wick_spec', 'filterWickSpec'],
+                ['responsible_person', 'filterResponsible'],
+                ['plan_status', 'filterPlanStatus'],
+                ['source_reason', 'filterSource'],
+                ['is_overdue', 'filterOverdue'],
+            ];
+            fields.forEach(([key, id]) => {
+                const v = document.getElementById(id).value;
+                if (v) params.append(key, v);
+            });
+            const from = document.getElementById('filterPlannedFrom').value;
+            const to = document.getElementById('filterPlannedTo').value;
+            if (from) params.append('planned_from', from.replace('T', ' ') + ':00');
+            if (to) params.append('planned_to', to.replace('T', ' ') + ':59');
+            const search = document.getElementById('searchInput').value.trim();
+            if (search) params.append('search', search);
+            params.append('page', currentPage);
+            params.append('page_size', PAGE_SIZE);
+            return params.toString();
+        }
+
+        function resetFilters() {
+            ['filterTestBatch', 'filterSampleCode', 'filterFragrance', 'filterCupType',
+             'filterWickSpec', 'filterResponsible', 'filterPlanStatus', 'filterSource',
+             'filterOverdue', 'filterPlannedFrom', 'filterPlannedTo', 'searchInput'
+            ].forEach(id => document.getElementById(id).value = '');
+            currentPage = 1;
+            loadPlanList();
+        }
+
+        function applyFilters() {
+            currentPage = 1;
+            loadPlanList();
+        }
+
+        async function loadPlanList() {
+            try {
+                const tbody = document.getElementById('planTableBody');
+                tbody.innerHTML = '<tr><td colspan="13" class="loading">加载中...</td></tr>';
+                const qs = buildFilterParams();
+                const data = await apiGet(`/retest-plans/?${qs}`);
+                const results = data.results || [];
+                currentPlanList = results;
+
+                document.getElementById('totalCount').textContent = data.count || 0;
+
+                if (!results.length) {
+                    tbody.innerHTML = '<tr><td colspan="13" class="empty"><div class="empty-icon">📭</div>暂无计划数据</td></tr>';
+                } else {
+                    tbody.innerHTML = results.map(p => renderPlanRow(p)).join('');
+                }
+                renderPagination(data);
+            } catch (e) {
+                console.error('加载计划列表失败:', e);
+                document.getElementById('planTableBody').innerHTML =
+                    '<tr><td colspan="13" class="text-danger">加载失败: ' + e.message + '</td></tr>';
+            }
+        }
+
+        function renderPlanRow(p) {
+            const statusCls = {
+                'planned': 'tag-planned',
+                'in_progress': 'tag-progress',
+                'completed': 'tag-completed',
+                'cancelled': 'tag-cancelled'
+            }[p.plan_status] || 'tag-planned';
+
+            const overdueTag = p.is_overdue
+                ? `<span class="tag tag-overdue">⚠️ 已逾期</span>`
+                : `<span class="tag tag-normal">正常</span>`;
+
+            const resultTag = (p.latest_test_result || '').includes('异常')
+                ? `<span class="tag tag-abnormal text-ellipsis" title="${p.latest_test_result||''}">${p.latest_test_result||'-'}</span>`
+                : `<span class="tag tag-success">${p.latest_test_result||'暂无'}</span>`;
+
+            return `
+                <tr>
+                    <td>
+                        <div style="font-weight:600;color:#667eea;">${p.plan_no}</div>
+                        <div class="text-sm text-muted">${formatDateTime(p.created_at)}</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:600;">${p.sample_code}</div>
+                        <div class="text-sm text-muted">批次: ${p.test_batch}</div>
+                        <div class="text-sm">
+                            <span class="text-muted">${p.cup_type}</span> · 
+                            <span class="text-muted">${p.wick_spec}</span>
+                        </div>
+                        <div><span class="tag tag-planned">${p.sample_status_display}</span></div>
+                    </td>
+                    <td><span class="tag ${statusCls}">${p.plan_status_display}</span></td>
+                    <td>${overdueTag}</td>
+                    <td>
+                        <div>${formatDateTime(p.planned_retest_time)}</div>
+                        <div class="text-sm text-muted">${p.execution_count}次执行</div>
+                    </td>
+                    <td>${p.responsible_person}</td>
+                    <td>
+                        <div>${p.source_reason_display}</div>
+                        ${p.abnormal_reason ? `<div class="text-sm text-muted text-ellipsis" title="${p.abnormal_reason}" style="max-width:150px;">${p.abnormal_reason}</div>` : ''}
+                    </td>
+                    <td>${resultTag}</td>
+                    <td>
+                        <div class="text-ellipsis" title="${p.abnormal_reason||''}" style="max-width:180px;">
+                            ${p.abnormal_reason || '-'}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="text-ellipsis" title="${p.latest_closure_conclusion||''}" style="max-width:160px;">
+                            ${p.latest_closure_conclusion || '<span class="text-muted">暂无</span>'}
+                        </div>
+                    </td>
+                    <td style="text-align:center;font-weight:600;">${p.execution_count}</td>
+                    <td class="text-sm text-muted">${formatDateTime(p.created_at)}</td>
+                    <td>
+                        <div class="action-links">
+                            <button class="link-btn" onclick="viewDetail(${p.id})">详情</button>
+                            ${p.plan_status !== 'completed' && p.plan_status !== 'cancelled' ? `
+                                <button class="link-btn" onclick="executePlan(${p.id})">执行</button>
+                                <button class="link-btn danger" onclick="cancelPlan(${p.id})">取消</button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        function renderPagination(data) {
+            const total = data.count || 0;
+            const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
+            document.getElementById('pageInfo').textContent =
+                `第 ${currentPage} / ${totalPages} 页，共 ${total} 条记录`;
+
+            const container = document.getElementById('pageButtons');
+            let buttons = `<button class="page-btn" onclick="goToPage(1)" ${currentPage===1?'disabled':''}>首页</button>`;
+            buttons += `<button class="page-btn" onclick="goToPage(${currentPage-1})" ${currentPage===1?'disabled':''}>上一页</button>`;
+
+            const start = Math.max(1, currentPage - 2);
+            const end = Math.min(totalPages, start + 4);
+            for (let i = start; i <= end; i++) {
+                buttons += `<button class="page-btn ${i===currentPage?'active':''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+
+            buttons += `<button class="page-btn" onclick="goToPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>下一页</button>`;
+            buttons += `<button class="page-btn" onclick="goToPage(${totalPages})" ${currentPage===totalPages?'disabled':''}>末页</button>`;
+            container.innerHTML = buttons;
+        }
+
+        function goToPage(p) {
+            currentPage = p;
+            loadPlanList();
+        }
+
+        async function loadSampleOptions() {
+            try {
+                const sel = document.getElementById('formWaxSample');
+                sel.innerHTML = '<option value="">加载中...</option>';
+                const data = await apiGet('/closure-samples/?page_size=200');
+                const samples = data.results || [];
+                sel.innerHTML = '<option value="">请选择蜡样</option>' +
+                    samples.map(s => {
+                        const statusLabel = s.status_display;
+                        return `<option value="${s.id}">[${s.test_batch}] ${s.sample_code} - ${s.cup_type}/${s.wick_spec}/${s.fragrance_code} (${statusLabel})</option>`;
+                    }).join('');
+                sel.onchange = onSampleChange;
+            } catch (e) {
+                console.error('加载蜡样选项失败:', e);
+                document.getElementById('formWaxSample').innerHTML = '<option value="">加载失败</option>';
+            }
+        }
+
+        async function onSampleChange() {
+            const sampleId = document.getElementById('formWaxSample').value;
+            const sel = document.getElementById('formSourceBurnTest');
+            sel.innerHTML = '<option value="">无</option>';
+            if (!sampleId) return;
+            try {
+                const data = await apiGet(`/tests/?wax_sample=${sampleId}&has_abnormal=true&page_size=50`);
+                const tests = data.results || [];
+                if (tests.length) {
+                    sel.innerHTML = '<option value="">无（可选择关联的异常测试）</option>' +
+                        tests.map(t => {
+                            const info = [];
+                            if (t.smoke_level) info.push(`烟量${t.smoke_level}级`);
+                            if (t.cup_wall_temp) info.push(`杯温${t.cup_wall_temp}℃`);
+                            const flags = t.auto_flags || {};
+                            if (flags.warnings && flags.warnings.length) info.push(...flags.warnings.slice(0, 2));
+                            return `<option value="${t.id}">第${t.test_round}轮 - ${formatDateTime(t.test_time)}${info.length?` (${info.join('、')})`:''}</option>`;
+                        }).join('');
+                }
+            } catch (e) {
+                console.error('加载测试记录失败:', e);
+            }
+        }
+
+        function openCreateModal() {
+            document.querySelectorAll('#createModal input, #createModal textarea, #createModal select').forEach(el => {
+                if (el.id !== 'formWaxSample' && el.id !== 'formSourceReason' && el.id !== 'formSourceBurnTest') {
+                    el.value = '';
+                }
+            });
+            const now = new Date();
+            now.setDate(now.getDate() + 1);
+            now.setHours(14, 0, 0, 0);
+            document.getElementById('formPlannedTime').value = toLocalInputValue(now);
+            loadSampleOptions();
+            openModal('createModal');
+        }
+
+        async function submitCreate() {
+            const data = {
+                wax_sample: parseInt(document.getElementById('formWaxSample').value),
+                planned_retest_time: document.getElementById('formPlannedTime').value.replace('T', ' ') + ':00',
+                responsible_person: document.getElementById('formResponsible').value.trim(),
+                source_reason: document.getElementById('formSourceReason').value,
+                retest_goal: document.getElementById('formRetestGoal').value.trim(),
+                attention_notes: document.getElementById('formAttentionNotes').value.trim(),
+                source_reason_detail: document.getElementById('formSourceDetail').value.trim(),
+                created_by: document.getElementById('formCreatedBy').value.trim(),
+            };
+            const burnTestId = document.getElementById('formSourceBurnTest').value;
+            if (burnTestId) data.source_burn_test = parseInt(burnTestId);
+
+            if (!data.wax_sample) { showToast('请选择蜡样', 'error'); return; }
+            if (!data.planned_retest_time) { showToast('请选择计划复测时间', 'error'); return; }
+            if (!data.responsible_person) { showToast('请输入负责人', 'error'); return; }
+            if (!data.source_reason) { showToast('请选择来源原因', 'error'); return; }
+
+            try {
+                await apiPost('/retest-plans/', data);
+                showToast('创建计划成功！', 'success');
+                closeModal('createModal');
+                loadSummary();
+                loadPlanList();
+            } catch (e) {
+                showToast('创建失败: ' + e.message, 'error');
+            }
+        }
+
+        async function viewDetail(id) {
+            currentDetailId = id;
+            openModal('detailModal');
+            document.getElementById('detailTitle').textContent = '加载中...';
+            document.getElementById('detailBody').innerHTML = '<div class="loading">加载中...</div>';
+            try {
+                const plan = await apiGet(`/retest-plans/${id}/`);
+                document.getElementById('detailTitle').textContent = `${plan.plan_no} - ${plan.wax_sample_info.sample_code} 详情`;
+                renderDetail(plan);
+
+                const canExecute = plan.plan_status !== 'completed' && plan.plan_status !== 'cancelled';
+                document.getElementById('detailExecuteBtn').style.display = canExecute ? '' : 'none';
+                document.getElementById('detailCancelBtn').style.display = canExecute ? '' : 'none';
+            } catch (e) {
+                document.getElementById('detailBody').innerHTML =
+                    '<div class="alert-box alert-danger">加载失败: ' + e.message + '</div>';
+            }
+        }
+
+        function renderDetail(plan) {
+            const s = plan.wax_sample_info;
+            const statusCls = {
+                'planned': 'tag-planned', 'in_progress': 'tag-progress',
+                'completed': 'tag-completed', 'cancelled': 'tag-cancelled'
+            }[plan.plan_status] || 'tag-planned';
+
+            let alertsHtml = '';
+            if (plan.is_overdue && plan.plan_status !== 'completed' && plan.plan_status !== 'cancelled') {
+                alertsHtml += `<div class="alert-box alert-danger">⚠️ 该计划已逾期！计划复测时间：${formatDateTime(plan.planned_retest_time)}</div>`;
+            }
+            if (plan.wick_alerts && plan.wick_alerts.length) {
+                const unresolved = plan.wick_alerts.filter(a => !a.resolved);
+                if (unresolved.length) {
+                    alertsHtml += `<div class="alert-box alert-warn">
+                        🔔 芯线风险提示：芯线规格「${s.wick_spec}」在批次「${s.test_batch}」中存在 ${unresolved[0].problem_count} 个问题蜡样集中告警
+                    </div>`;
+                }
+            }
+
+            const body = document.getElementById('detailBody');
+            body.innerHTML = `
+                ${alertsHtml}
+
+                <div class="tabs" id="detailTabs">
+                    <div class="tab active" onclick="switchDetailTab(0)">📋 基本信息</div>
+                    <div class="tab" onclick="switchDetailTab(1)">🧪 关联测试记录</div>
+                    <div class="tab" onclick="switchDetailTab(2)">⚠️ 芯线风险提示</div>
+                    <div class="tab" onclick="switchDetailTab(3)">📑 复测计划与执行</div>
+                    <div class="tab" onclick="switchDetailTab(4)">📌 历史处理结论</div>
+                </div>
+
+                <div class="tab-content active">
+                    ${renderBasicInfo(plan, s, statusCls)}
+                </div>
+                <div class="tab-content">
+                    ${renderRelatedTests(plan.related_tests)}
+                </div>
+                <div class="tab-content">
+                    ${renderWickAlerts(plan.wick_alerts)}
+                </div>
+                <div class="tab-content">
+                    ${renderPlanAndExecutions(plan)}
+                </div>
+                <div class="tab-content">
+                    ${renderClosureHistory(plan.closure_history)}
+                </div>
+            `;
+        }
+
+        function switchDetailTab(idx) {
+            const tabs = document.querySelectorAll('#detailTabs .tab');
+            const contents = document.querySelectorAll('.tab-content');
+            tabs.forEach((t, i) => t.classList.toggle('active', i === idx));
+            contents.forEach((c, i) => c.classList.toggle('active', i === idx));
+        }
+
+        function renderBasicInfo(plan, s, statusCls) {
+            return `
+                <div class="detail-section">
+                    <div class="detail-section-title">📋 计划信息</div>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">计划编号</span>
+                            <span class="info-value" style="font-weight:600;color:#667eea;">${plan.plan_no}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">计划状态</span>
+                            <span class="info-value"><span class="tag ${statusCls}">${plan.plan_status_display}</span></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">是否逾期</span>
+                            <span class="info-value">${plan.is_overdue ? '<span class="tag tag-overdue">已逾期</span>' : '<span class="tag tag-normal">正常</span>'}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">来源原因</span>
+                            <span class="info-value">${plan.source_reason_display}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">计划复测时间</span>
+                            <span class="info-value">${formatDateTime(plan.planned_retest_time)}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">负责人</span>
+                            <span class="info-value">${plan.responsible_person}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">创建人</span>
+                            <span class="info-value">${plan.created_by || '-'}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">创建时间</span>
+                            <span class="info-value">${formatDateTime(plan.created_at)}</span>
+                        </div>
+                        <div class="info-item" style="grid-column: 1 / -1;">
+                            <span class="info-label">复测目标</span>
+                            <span class="info-value" style="background:#f5f7fa;padding:8px 12px;border-radius:4px;">${plan.retest_goal || '<span class="text-muted">未填写</span>'}</span>
+                        </div>
+                        <div class="info-item" style="grid-column: 1 / -1;">
+                            <span class="info-label">注意事项</span>
+                            <span class="info-value" style="background:#f5f7fa;padding:8px 12px;border-radius:4px;">${plan.attention_notes || '<span class="text-muted">未填写</span>'}</span>
+                        </div>
+                        <div class="info-item" style="grid-column: 1 / -1;">
+                            <span class="info-label">原因说明</span>
+                            <span class="info-value" style="background:#f5f7fa;padding:8px 12px;border-radius:4px;">${plan.source_reason_detail || plan.abnormal_reason || '<span class="text-muted">未填写</span>'}</span>
+                        </div>
+                        ${plan.cancelled_reason ? `
+                        <div class="info-item" style="grid-column: 1 / -1;">
+                            <span class="info-label">取消原因</span>
+                            <span class="info-value" style="background:#fef0f0;color:#f56c6c;padding:8px 12px;border-radius:4px;">${plan.cancelled_reason}</span>
+                        </div>` : ''}
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-section-title">🪔 蜡样基础信息</div>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">蜡样编号</span>
+                            <span class="info-value" style="font-weight:600;">${s.sample_code}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">测试批次</span>
+                            <span class="info-value">${s.test_batch}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">香型代号</span>
+                            <span class="info-value">${s.fragrance_code}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">杯型</span>
+                            <span class="info-value">${s.cup_type}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">芯线规格</span>
+                            <span class="info-value">${s.wick_spec}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">责任人</span>
+                            <span class="info-value">${s.responsible_person}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">蜡样状态</span>
+                            <span class="info-value"><span class="tag tag-progress">${s.status_display}</span></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">复测次数</span>
+                            <span class="info-value" style="font-weight:600;">${s.retest_count} 次</span>
+                        </div>
+                        <div class="info-item" style="grid-column: 1 / -1;">
+                            <span class="info-label">蜡样备注</span>
+                            <span class="info-value" style="background:#f5f7fa;padding:8px 12px;border-radius:4px;">${s.remarks || '<span class="text-muted">无</span>'}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderRelatedTests(tests) {
+            if (!tests || !tests.length) {
+                return '<div class="empty"><div class="empty-icon">🧪</div>暂无测试记录</div>';
+            }
+            return `
+                <div class="detail-section">
+                    <div class="detail-section-title">🧪 燃烧测试记录（共 ${tests.length} 条）</div>
+                    <table class="mini-table">
+                        <thead>
+                            <tr>
+                                <th>轮次</th>
+                                <th>是否复测</th>
+                                <th>点燃时间</th>
+                                <th>熄灭时间</th>
+                                <th>时长</th>
+                                <th>烟量</th>
+                                <th>杯温</th>
+                                <th>熔池直径</th>
+                                <th>进入下一轮</th>
+                                <th>测试人</th>
+                                <th>异常/建议</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tests.map(t => {
+                                const flags = t.auto_flags || {};
+                                const hasWarn = flags.warnings && flags.warnings.length;
+                                return `
+                                    <tr style="${hasWarn?'background:#fef0f0;':''}">
+                                        <td style="font-weight:600;">第${t.test_round}轮</td>
+                                        <td>${t.is_retest?'<span class="tag tag-warn">是</span>':'<span class="tag tag-normal">否</span>'}</td>
+                                        <td>${formatDateTime(t.ignite_time)}</td>
+                                        <td>${formatDateTime(t.extinguish_time)}</td>
+                                        <td>${t.burn_duration_minutes?t.burn_duration_minutes+'分':'-'}</td>
+                                        <td>${t.smoke_level?`${t.smoke_level_display}`:'-'}</td>
+                                        <td>${t.cup_wall_temp?t.cup_wall_temp+'℃':'-'}</td>
+                                        <td>${t.melt_pool_diameter?t.melt_pool_diameter+'cm':'-'}</td>
+                                        <td>${t.enter_next_round===null?'<span class="text-muted">-</span>':(t.enter_next_round?'<span class="text-success">是</span>':'<span class="text-danger">否</span>')}</td>
+                                        <td>${t.tested_by||'-'}</td>
+                                        <td style="max-width:200px;">
+                                            ${t.abnormal_desc?`<div class="text-danger" title="${t.abnormal_desc}">⚠️ ${t.abnormal_desc.substring(0,30)}${t.abnormal_desc.length>30?'...':''}</div>`:''}
+                                            ${t.retest_suggestion?`<div class="text-warn" title="${t.retest_suggestion}">💡 ${t.retest_suggestion.substring(0,30)}${t.retest_suggestion.length>30?'...':''}</div>`:''}
+                                            ${hasWarn?`<div><span class="tag tag-overdue">自动告警 ${flags.warnings.length}条</span></div>`:''}
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderWickAlerts(alerts) {
+            if (!alerts || !alerts.length) {
+                return '<div class="empty"><div class="empty-icon">✅</div>该芯线规格暂无集中告警</div>';
+            }
+            return `
+                <div class="detail-section">
+                    <div class="detail-section-title">⚠️ 芯线问题集中告警（共 ${alerts.length} 条）</div>
+                    ${alerts.map(a => `
+                        <div class="alert-box ${a.resolved?'alert-info':'alert-danger'}" style="margin-bottom:12px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                <span style="font-weight:600;">
+                                    ${a.resolved?'✅ 已处理':'🔴 未处理'}
+                                    批次「${a.test_batch}」芯线「${a.wick_spec}」 - ${a.problem_count}个问题蜡样
+                                </span>
+                                <span class="text-sm text-muted">触发: ${formatDateTime(a.last_triggered)}</span>
+                            </div>
+                            <div style="margin-bottom:4px;">
+                                <strong>涉及蜡样：</strong>${a.affected_samples && a.affected_samples.length?a.affected_samples.join('、'):'无'}
+                            </div>
+                            ${a.note?`<div><strong>处理备注：</strong>${a.note}</div>`:''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function renderPlanAndExecutions(plan) {
+            const executions = plan.executions || [];
+            return `
+                <div class="detail-section">
+                    <div class="detail-section-title">📑 复测计划详情</div>
+                    <div class="timeline">
+                        <div class="timeline-item">
+                            <div class="timeline-dot"></div>
+                            <div class="timeline-title">创建复测计划</div>
+                            <div class="timeline-time">${formatDateTime(plan.created_at)}${plan.created_by?` · ${plan.created_by}`:''}</div>
+                            <div class="timeline-content">
+                                <div><strong>计划编号：</strong>${plan.plan_no}</div>
+                                <div><strong>计划复测时间：</strong>${formatDateTime(plan.planned_retest_time)}</div>
+                                <div><strong>负责人：</strong>${plan.responsible_person}</div>
+                                ${plan.retest_goal?`<div><strong>复测目标：</strong>${plan.retest_goal}</div>`:''}
+                                ${plan.attention_notes?`<div><strong>注意事项：</strong>${plan.attention_notes}</div>`:''}
+                            </div>
+                            <div class="timeline-tags">
+                                <span class="tag tag-planned">${plan.source_reason_display}</span>
+                            </div>
+                        </div>
+                        ${executions.map((e, i) => {
+                            const dotClass = e.closure_action?'success':'warn';
+                            return `
+                                <div class="timeline-item">
+                                    <div class="timeline-dot ${dotClass}"></div>
+                                    <div class="timeline-title">第 ${i+1} 次执行记录</div>
+                                    <div class="timeline-time">${formatDateTime(e.actual_retest_time)}${e.executed_by?` · 执行人: ${e.executed_by}`:''}</div>
+                                    <div class="timeline-content">
+                                        ${e.result_description?`<div><strong>结果说明：</strong>${e.result_description}</div>`:''}
+                                        ${e.closure_action?`<div style="margin-top:6px;"><strong>处理结论：</strong><span class="tag tag-completed">${e.closure_action_display||e.closure_action}</span></div>`:''}
+                                        ${e.closure_remark?`<div><strong>处理备注：</strong>${e.closure_remark}</div>`:''}
+                                        ${e.burn_test?`<div class="text-sm text-muted">关联测试记录: 第${e.burn_test.test_round||'?'}轮</div>`:''}
+                                    </div>
+                                    ${e.closure_action?`
+                                        <div class="timeline-tags">
+                                            <span class="tag tag-success">执行完成并处理</span>
+                                        </div>
+                                    `:`
+                                        <div class="timeline-tags">
+                                            <span class="tag tag-warn">仅登记执行</span>
+                                        </div>
+                                    `}
+                                </div>
+                            `;
+                        }).join('')}
+                        ${plan.plan_status==='cancelled'?`
+                            <div class="timeline-item">
+                                <div class="timeline-dot danger"></div>
+                                <div class="timeline-title">计划已取消</div>
+                                <div class="timeline-content" style="color:#f56c6c;">
+                                    ${plan.cancelled_reason||'未填写取消原因'}
+                                </div>
+                            </div>
+                        `:''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderClosureHistory(closures) {
+            if (!closures || !closures.length) {
+                return '<div class="empty"><div class="empty-icon">📌</div>暂无历史处理结论</div>';
+            }
+            return `
+                <div class="detail-section">
+                    <div class="detail-section-title">📌 历史处理结论（共 ${closures.length} 条）</div>
+                    <table class="mini-table">
+                        <thead>
+                            <tr>
+                                <th>处理时间</th>
+                                <th>处理结论</th>
+                                <th>处理人</th>
+                                <th>关联测试</th>
+                                <th>处理备注</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${closures.map(c => `
+                                <tr>
+                                    <td>${formatDateTime(c.created_at)}</td>
+                                    <td><span class="tag tag-success">${c.action_display||c.action}</span></td>
+                                    <td>${c.handler||'-'}</td>
+                                    <td>${c.burn_test?`第${c.burn_test.test_round||'?'}轮`:'-'}</td>
+                                    <td style="max-width:300px;">${c.remark||'-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function executePlan(id) {
+            currentDetailId = id;
+            openExecuteModal();
+        }
+
+        async function openExecuteModal() {
+            if (!currentDetailId) return;
+            document.querySelectorAll('#executeModal input, #executeModal textarea, #executeModal select').forEach(el => el.value = '');
+            const now = new Date();
+            document.getElementById('execActualTime').value = toLocalInputValue(now);
+            document.getElementById('executeAlertBox').innerHTML = '';
+
+            try {
+                const plan = await apiGet(`/retest-plans/${currentDetailId}/`);
+                if (plan.is_overdue) {
+                    document.getElementById('executeAlertBox').innerHTML =
+                        '<div class="alert-box alert-warn">⚠️ 注意：该计划已逾期，当前为补登记执行</div>';
+                }
+
+                const sel = document.getElementById('execBurnTest');
+                sel.innerHTML = '<option value="">无</option>';
+                const sampleId = plan.wax_sample_info && plan.wax_sample_info.id;
+                if (sampleId) {
+                    const tests = plan.related_tests || [];
+                    if (tests.length) {
+                        sel.innerHTML = '<option value="">无（可选择关联的燃烧测试记录）</option>' +
+                            tests.map((t, i) => {
+                                const info = [];
+                                if (t.is_retest) info.push('复测');
+                                if (t.smoke_level) info.push(`烟量${t.smoke_level}级`);
+                                if (t.cup_wall_temp) info.push(`杯温${t.cup_wall_temp}℃`);
+                                return `<option value="${t.id}">第${t.test_round}轮 - ${formatDateTime(t.test_time)}${info.length?` (${info.join('、')})`:''}</option>`;
+                            }).join('');
+                    }
+                }
+                openModal('executeModal');
+            } catch (e) {
+                showToast('加载执行数据失败: ' + e.message, 'error');
+            }
+        }
+
+        async function submitExecute() {
+            if (!currentDetailId) return;
+            const data = {
+                actual_retest_time: document.getElementById('execActualTime').value.replace('T', ' ') + ':00',
+                executed_by: document.getElementById('execExecutedBy').value.trim(),
+                result_description: document.getElementById('execResultDesc').value.trim(),
+                closure_remark: document.getElementById('execClosureRemark').value.trim(),
+            };
+            const closureAction = document.getElementById('execClosureAction').value;
+            if (closureAction) data.closure_action = closureAction;
+            const burnTestId = document.getElementById('execBurnTest').value;
+            if (burnTestId) data.burn_test_id = parseInt(burnTestId);
+
+            if (!data.actual_retest_time) { showToast('请选择实际复测时间', 'error'); return; }
+
+            try {
+                const result = await apiPost(`/retest-plans/${currentDetailId}/execute/`, data);
+                showToast('执行登记成功！' + (result.closure_action_display?` 处理结论：${result.closure_action_display}`:''), 'success');
+                closeModal('executeModal');
+                closeModal('detailModal');
+                loadSummary();
+                loadPlanList();
+            } catch (e) {
+                showToast('提交失败: ' + e.message, 'error');
+            }
+        }
+
+        function cancelPlan(id) {
+            currentDetailId = id;
+            openCancelModal();
+        }
+
+        function openCancelModal() {
+            document.getElementById('cancelReason').value = '';
+            openModal('cancelModal');
+        }
+
+        async function submitCancel() {
+            if (!currentDetailId) return;
+            const reason = document.getElementById('cancelReason').value.trim();
+            if (!reason) { showToast('请填写取消原因', 'error'); return; }
+
+            try {
+                await apiPost(`/retest-plans/${currentDetailId}/cancel/`, { cancelled_reason: reason });
+                showToast('计划已取消', 'success');
+                closeModal('cancelModal');
+                closeModal('detailModal');
+                loadSummary();
+                loadPlanList();
+            } catch (e) {
+                showToast('取消失败: ' + e.message, 'error');
+            }
+        }
+
+        document.getElementById('searchInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') applyFilters();
+        });
+
+        async function init() {
+            await loadOptions();
+            await loadSummary();
+            await loadPlanList();
+        }
+
+        init();
+    </script>
+</body>
+</html>

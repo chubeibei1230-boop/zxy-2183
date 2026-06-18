@@ -1,7 +1,9 @@
 from rest_framework import serializers
 from .models import (
     WaxSample, BurnTest, WickProblemAlert, RetestClosure,
-    StatusChoices, SmokeLevelChoices, ClosureActionChoices
+    RetestPlan, RetestPlanExecution,
+    StatusChoices, SmokeLevelChoices, ClosureActionChoices,
+    PlanStatusChoices, PlanSourceChoices
 )
 
 
@@ -223,3 +225,164 @@ class ClosureHandleSerializer(serializers.Serializer):
     handler = serializers.CharField(required=False, allow_blank=True, default='')
     remark = serializers.CharField(required=False, allow_blank=True, default='')
     burn_test_id = serializers.IntegerField(required=False, allow_null=True, default=None)
+
+
+class PlanStatusSerializer(serializers.Serializer):
+    value = serializers.CharField()
+    label = serializers.CharField()
+
+
+class PlanSourceSerializer(serializers.Serializer):
+    value = serializers.CharField()
+    label = serializers.CharField()
+
+
+class RetestPlanExecutionSerializer(serializers.ModelSerializer):
+    closure_action_display = serializers.CharField(source='get_closure_action_display', read_only=True)
+    burn_test_display = serializers.CharField(source='burn_test.__str__', read_only=True, allow_null=True)
+
+    class Meta:
+        model = RetestPlanExecution
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
+
+
+class RetestPlanExecutionListSerializer(serializers.ModelSerializer):
+    closure_action_display = serializers.CharField(source='get_closure_action_display', read_only=True)
+
+    class Meta:
+        model = RetestPlanExecution
+        fields = [
+            'id', 'actual_retest_time', 'executed_by', 'result_description',
+            'closure_action', 'closure_action_display', 'closure_remark',
+            'burn_test', 'created_at'
+        ]
+
+
+class RetestPlanSerializer(serializers.ModelSerializer):
+    plan_status_display = serializers.CharField(source='get_plan_status_display', read_only=True)
+    source_reason_display = serializers.CharField(source='get_source_reason_display', read_only=True)
+    wax_sample_display = serializers.CharField(source='wax_sample.__str__', read_only=True)
+    is_overdue = serializers.BooleanField(read_only=True)
+    execution_count = serializers.IntegerField(read_only=True)
+    latest_test_result = serializers.CharField(read_only=True)
+    abnormal_reason = serializers.CharField(read_only=True)
+    latest_closure_conclusion = serializers.CharField(read_only=True)
+    executions = RetestPlanExecutionListSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = RetestPlan
+        fields = '__all__'
+        read_only_fields = ('plan_no', 'created_at', 'updated_at')
+
+    def validate_wax_sample(self, value):
+        if self.instance is None:
+            if value.status not in [StatusChoices.PENDING_RETEST, StatusChoices.NEED_REFORM, StatusChoices.IN_TEST]:
+                pass
+        return value
+
+
+class RetestPlanListSerializer(serializers.ModelSerializer):
+    plan_status_display = serializers.CharField(source='get_plan_status_display', read_only=True)
+    source_reason_display = serializers.CharField(source='get_source_reason_display', read_only=True)
+    is_overdue = serializers.BooleanField(read_only=True)
+    execution_count = serializers.IntegerField(read_only=True)
+    latest_test_result = serializers.CharField(read_only=True)
+    abnormal_reason = serializers.CharField(read_only=True)
+    latest_closure_conclusion = serializers.CharField(read_only=True)
+    sample_code = serializers.CharField(source='wax_sample.sample_code', read_only=True)
+    test_batch = serializers.CharField(source='wax_sample.test_batch', read_only=True)
+    fragrance_code = serializers.CharField(source='wax_sample.fragrance_code', read_only=True)
+    cup_type = serializers.CharField(source='wax_sample.cup_type', read_only=True)
+    wick_spec = serializers.CharField(source='wax_sample.wick_spec', read_only=True)
+    sample_status = serializers.CharField(source='wax_sample.status', read_only=True)
+    sample_status_display = serializers.CharField(source='wax_sample.get_status_display', read_only=True)
+
+    class Meta:
+        model = RetestPlan
+        fields = [
+            'id', 'plan_no', 'plan_status', 'plan_status_display',
+            'planned_retest_time', 'responsible_person', 'retest_goal',
+            'attention_notes', 'source_reason', 'source_reason_display',
+            'is_overdue', 'execution_count', 'latest_test_result',
+            'abnormal_reason', 'latest_closure_conclusion',
+            'wax_sample', 'sample_code', 'test_batch', 'fragrance_code',
+            'cup_type', 'wick_spec', 'sample_status', 'sample_status_display',
+            'created_by', 'created_at', 'updated_at'
+        ]
+
+
+class RetestPlanDetailSerializer(RetestPlanSerializer):
+    wax_sample_info = serializers.SerializerMethodField()
+    related_tests = serializers.SerializerMethodField()
+    wick_alerts = serializers.SerializerMethodField()
+    closure_history = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RetestPlan
+        fields = '__all__'
+        read_only_fields = ('plan_no', 'created_at', 'updated_at')
+
+    def get_wax_sample_info(self, obj):
+        s = obj.wax_sample
+        return {
+            'id': s.id,
+            'sample_code': s.sample_code,
+            'test_batch': s.test_batch,
+            'fragrance_code': s.fragrance_code,
+            'cup_type': s.cup_type,
+            'wick_spec': s.wick_spec,
+            'responsible_person': s.responsible_person,
+            'status': s.status,
+            'status_display': s.get_status_display(),
+            'created_at': s.created_at,
+            'updated_at': s.updated_at,
+            'remarks': s.remarks,
+            'retest_count': s.retest_count,
+        }
+
+    def get_related_tests(self, obj):
+        tests = obj.wax_sample.burn_tests.all()[:20]
+        return BurnTestListSerializer(tests, many=True).data
+
+    def get_wick_alerts(self, obj):
+        alerts = WickProblemAlert.objects.filter(
+            test_batch=obj.wax_sample.test_batch,
+            wick_spec=obj.wax_sample.wick_spec
+        ).order_by('-last_triggered')
+        return WickProblemAlertSerializer(alerts, many=True).data
+
+    def get_closure_history(self, obj):
+        closures = obj.wax_sample.retest_closures.order_by('-created_at')
+        return RetestClosureSerializer(closures, many=True).data
+
+
+class RetestPlanExecuteSerializer(serializers.Serializer):
+    actual_retest_time = serializers.DateTimeField()
+    executed_by = serializers.CharField(required=False, allow_blank=True, default='')
+    result_description = serializers.CharField(required=False, allow_blank=True, default='')
+    closure_action = serializers.ChoiceField(
+        choices=ClosureActionChoices.choices,
+        required=False,
+        allow_null=True,
+        default=None
+    )
+    closure_remark = serializers.CharField(required=False, allow_blank=True, default='')
+    burn_test_id = serializers.IntegerField(required=False, allow_null=True, default=None)
+
+
+class RetestPlanCancelSerializer(serializers.Serializer):
+    cancelled_reason = serializers.CharField(required=True, allow_blank=False)
+
+
+class PlanSummarySerializer(serializers.Serializer):
+    total_plans = serializers.IntegerField()
+    planned_count = serializers.IntegerField()
+    in_progress_count = serializers.IntegerField()
+    completed_count = serializers.IntegerField()
+    cancelled_count = serializers.IntegerField()
+    overdue_count = serializers.IntegerField()
+    by_status = serializers.ListField(child=serializers.DictField())
+    by_source = serializers.ListField(child=serializers.DictField())
+    by_responsible = serializers.ListField(child=serializers.DictField())
+    recent_plans = serializers.ListField(child=serializers.DictField())

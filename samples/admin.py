@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import WaxSample, BurnTest, WickProblemAlert, RetestClosure
+from .models import WaxSample, BurnTest, WickProblemAlert, RetestClosure, RetestPlan, RetestPlanExecution
 
 
 class BurnTestInline(admin.TabularInline):
@@ -72,3 +72,46 @@ class RetestClosureAdmin(admin.ModelAdmin):
         'handler', 'remark'
     ]
     readonly_fields = ['created_at']
+
+
+class RetestPlanExecutionInline(admin.TabularInline):
+    model = RetestPlanExecution
+    extra = 0
+    fields = [
+        'actual_retest_time', 'executed_by', 'result_description',
+        'closure_action', 'closure_remark', 'burn_test', 'created_at'
+    ]
+    readonly_fields = ['created_at']
+
+
+@admin.register(RetestPlan)
+class RetestPlanAdmin(admin.ModelAdmin):
+    list_display = [
+        'plan_no', 'wax_sample', 'plan_status', 'planned_retest_time',
+        'responsible_person', 'source_reason', 'is_overdue', 'created_at'
+    ]
+    list_filter = [
+        'plan_status', 'source_reason', 'planned_retest_time',
+        'created_at'
+    ]
+    search_fields = [
+        'plan_no', 'wax_sample__sample_code', 'wax_sample__test_batch',
+        'responsible_person', 'retest_goal', 'attention_notes',
+        'source_reason_detail'
+    ]
+    readonly_fields = ['plan_no', 'created_at', 'updated_at']
+    inlines = [RetestPlanExecutionInline]
+
+
+@admin.register(RetestPlanExecution)
+class RetestPlanExecutionAdmin(admin.ModelAdmin):
+    list_display = [
+        'retest_plan', 'actual_retest_time', 'executed_by',
+        'closure_action', 'burn_test', 'created_at'
+    ]
+    list_filter = ['closure_action', 'actual_retest_time', 'created_at']
+    search_fields = [
+        'retest_plan__plan_no', 'retest_plan__wax_sample__sample_code',
+        'executed_by', 'result_description', 'closure_remark'
+    ]
+    readonly_fields = ['created_at', 'updated_at']

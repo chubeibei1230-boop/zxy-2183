@@ -22,6 +22,22 @@ class ClosureActionChoices(models.TextChoices):
     CONFIRM_VERSION = 'confirm_version', '确认可归入版本库'
 
 
+class PlanStatusChoices(models.TextChoices):
+    PLANNED = 'planned', '待执行'
+    IN_PROGRESS = 'in_progress', '执行中'
+    COMPLETED = 'completed', '已完成'
+    CANCELLED = 'cancelled', '已取消'
+
+
+class PlanSourceChoices(models.TextChoices):
+    ABNORMAL_TEST = 'abnormal_test', '测试异常待复测'
+    NEED_REFORM = 'need_reform', '需改配后复测'
+    MANUAL_INITIATED = 'manual_initiated', '手动发起复测'
+    HISTORY_ISSUE = 'history_issue', '历史问题回顾'
+    QUALITY_AUDIT = 'quality_audit', '质量抽检复核'
+    OTHER = 'other', '其他原因'
+
+
 class SmokeLevelChoices(models.IntegerChoices):
     LEVEL_1 = 1, '1级-无烟'
     LEVEL_2 = 2, '2级-轻微'
@@ -325,3 +341,186 @@ class RetestClosure(models.Model):
         elif self.action == ClosureActionChoices.CONFIRM_VERSION:
             sample.status = StatusChoices.VERSION_READY
         sample.save(update_fields=['status', 'updated_at'])
+
+
+class RetestPlan(models.Model):
+    wax_sample = models.ForeignKey(
+        WaxSample,
+        on_delete=models.CASCADE,
+        related_name='retest_plans',
+        verbose_name='蜡样'
+    )
+    plan_no = models.CharField('计划编号', max_length=50, unique=True)
+    plan_status = models.CharField(
+        '计划状态',
+        max_length=20,
+        choices=PlanStatusChoices.choices,
+        default=PlanStatusChoices.PLANNED
+    )
+    planned_retest_time = models.DateTimeField('计划复测时间')
+    responsible_person = models.CharField('负责人', max_length=50)
+    retest_goal = models.TextField('复测目标', blank=True, default='')
+    attention_notes = models.TextField('注意事项', blank=True, default='')
+    source_reason = models.CharField(
+        '来源原因',
+        max_length=30,
+        choices=PlanSourceChoices.choices,
+        default=PlanSourceChoices.ABNORMAL_TEST
+    )
+    source_reason_detail = models.TextField('原因说明', blank=True, default='')
+    source_burn_test = models.ForeignKey(
+        BurnTest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='triggered_plans',
+        verbose_name='关联异常测试记录'
+    )
+    created_by = models.CharField('创建人', max_length=50, blank=True, default='')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+    cancelled_reason = models.TextField('取消原因', blank=True, default='')
+
+    class Meta:
+        verbose_name = '复测计划'
+        verbose_name_plural = '复测计划'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.plan_no} - {self.wax_sample.sample_code}'
+
+    def _generate_plan_no(self):
+        if self.plan_no:
+            return
+        today_str = timezone.now().strftime('%Y%m%d')
+        prefix = f'RTP-{today_str}-'
+        existing = RetestPlan.objects.filter(plan_no__startswith=prefix).count()
+        self.plan_no = f'{prefix}{existing + 1:04d}'
+
+    def clean(self):
+        super().clean()
+        self._generate_plan_no()
+
+    def save(self, *args, **kwargs):
+        self._generate_plan_no()
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    @property
+    def is_overdue(self):
+        if self.plan_status in [PlanStatusChoices.COMPLETED, PlanStatusChoices.CANCELLED]:
+            return False
+        return timezone.now() > self.planned_retest_time
+
+    @property
+    def latest_execution(self):
+        return self.executions.order_by('-created_at').first()
+
+    @property
+    def execution_count(self):
+        return self.executions.count()
+
+    @property
+    def latest_test_result(self):
+        latest_test = self.wax_sample.latest_test
+        if not latest_test:
+            return '暂无测试记录'
+        flags = latest_test.analyze_flags()
+        warnings = flags.get('warnings', [])
+        if warnings:
+            return f"异常: {'; '.join(warnings[:2])}"
+        if latest_test.smoke_level is not None and latest_test.smoke_level >= SMOKE_HIGH_THRESHOLD:
+            return f'烟量等级{latest_test.smoke_level}偏高'
+        if latest_test.cup_wall_temp is not None:
+            if latest_test.cup_wall_temp >= TEMP_HIGH_THRESHOLD:
+                return f'杯壁温度{latest_test.cup_wall_temp}℃偏高'
+            elif latest_test.cup_wall_temp <= TEMP_LOW_THRESHOLD:
+                return f'杯壁温度{latest_test.cup_wall_temp}℃偏低'
+        if latest_test.abnormal_desc:
+            return f'存在异常: {latest_test.abnormal_desc[:30]}'
+        return '测试正常'
+
+    @property
+    def abnormal_reason(self):
+        if self.source_burn_test:
+            flags = self.source_burn_test.analyze_flags()
+            warnings = flags.get('warnings', [])
+            if warnings:
+                return '; '.join(warnings)
+            if self.source_burn_test.abnormal_desc:
+                return self.source_burn_test.abnormal_desc
+        if self.source_reason_detail:
+            return self.source_reason_detail
+        return self.get_source_reason_display()
+
+    @property
+    def latest_closure_conclusion(self):
+        closures = self.wax_sample.retest_closures.order_by('-created_at')
+        if closures.exists():
+            latest = closures.first()
+            return f'{latest.get_action_display()}' + (f'（{latest.remark[:20]}）' if latest.remark else '')
+        return '暂无处理结论'
+
+
+class RetestPlanExecution(models.Model):
+    retest_plan = models.ForeignKey(
+        RetestPlan,
+        on_delete=models.CASCADE,
+        related_name='executions',
+        verbose_name='复测计划'
+    )
+    burn_test = models.ForeignKey(
+        BurnTest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='plan_executions',
+        verbose_name='关联复测记录'
+    )
+    actual_retest_time = models.DateTimeField('实际复测时间')
+    executed_by = models.CharField('执行人', max_length=50, blank=True, default='')
+    result_description = models.TextField('结果说明', blank=True, default='')
+    closure_action = models.CharField(
+        '处理结论',
+        max_length=30,
+        choices=ClosureActionChoices.choices,
+        null=True,
+        blank=True
+    )
+    closure_remark = models.TextField('处理备注', blank=True, default='')
+    created_at = models.DateTimeField('记录时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '复测执行记录'
+        verbose_name_plural = '复测执行记录'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.retest_plan.plan_no} - 执行记录'
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self._update_plan_status()
+        self._create_closure_if_needed()
+
+    def _update_plan_status(self):
+        plan = self.retest_plan
+        if plan.plan_status == PlanStatusChoices.PLANNED:
+            plan.plan_status = PlanStatusChoices.IN_PROGRESS
+            plan.save(update_fields=['plan_status', 'updated_at'])
+        if self.closure_action:
+            plan.plan_status = PlanStatusChoices.COMPLETED
+            plan.save(update_fields=['plan_status', 'updated_at'])
+
+    def _create_closure_if_needed(self):
+        if self.closure_action:
+            RetestClosure.objects.get_or_create(
+                wax_sample=self.retest_plan.wax_sample,
+                burn_test=self.burn_test,
+                action=self.closure_action,
+                defaults={
+                    'handler': self.executed_by,
+                    'remark': self.closure_remark or self.result_description,
+                }
+            )

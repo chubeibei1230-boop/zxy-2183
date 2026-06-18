@@ -1,6 +1,6 @@
 from django.db.models import Q
 from django_filters import rest_framework as filters
-from .models import WaxSample, BurnTest, RetestClosure, WickProblemAlert, StatusChoices, SmokeLevelChoices, ClosureActionChoices
+from .models import WaxSample, BurnTest, RetestClosure, WickProblemAlert, RetestPlan, RetestPlanExecution, StatusChoices, SmokeLevelChoices, ClosureActionChoices, PlanStatusChoices, PlanSourceChoices
 
 
 class WaxSampleFilter(filters.FilterSet):
@@ -157,3 +157,50 @@ class RetestClosureFilter(filters.FilterSet):
     class Meta:
         model = RetestClosure
         fields = ['wax_sample']
+
+
+class RetestPlanFilter(filters.FilterSet):
+    test_batch = filters.CharFilter(field_name='wax_sample__test_batch', lookup_expr='icontains')
+    sample_code = filters.CharFilter(field_name='wax_sample__sample_code', lookup_expr='icontains')
+    fragrance_code = filters.CharFilter(field_name='wax_sample__fragrance_code', lookup_expr='icontains')
+    cup_type = filters.CharFilter(field_name='wax_sample__cup_type', lookup_expr='icontains')
+    wick_spec = filters.CharFilter(field_name='wax_sample__wick_spec', lookup_expr='icontains')
+    responsible_person = filters.CharFilter(field_name='responsible_person', lookup_expr='icontains')
+    plan_status = filters.ChoiceFilter(choices=PlanStatusChoices.choices)
+    source_reason = filters.ChoiceFilter(choices=PlanSourceChoices.choices)
+    is_overdue = filters.BooleanFilter(method='filter_is_overdue')
+    planned_from = filters.DateTimeFilter(field_name='planned_retest_time', lookup_expr='gte')
+    planned_to = filters.DateTimeFilter(field_name='planned_retest_time', lookup_expr='lte')
+    created_from = filters.DateFilter(field_name='created_at', lookup_expr='date__gte')
+    created_to = filters.DateFilter(field_name='created_at', lookup_expr='date__lte')
+
+    class Meta:
+        model = RetestPlan
+        fields = ['wax_sample']
+
+    def filter_is_overdue(self, queryset, name, value):
+        from django.utils import timezone
+        now = timezone.now()
+        ids = []
+        for plan in queryset:
+            if plan.plan_status in [PlanStatusChoices.COMPLETED, PlanStatusChoices.CANCELLED]:
+                is_overdue = False
+            else:
+                is_overdue = now > plan.planned_retest_time
+            if is_overdue == value:
+                ids.append(plan.id)
+        return queryset.filter(id__in=ids)
+
+
+class RetestPlanExecutionFilter(filters.FilterSet):
+    test_batch = filters.CharFilter(field_name='retest_plan__wax_sample__test_batch', lookup_expr='icontains')
+    sample_code = filters.CharFilter(field_name='retest_plan__wax_sample__sample_code', lookup_expr='icontains')
+    plan_no = filters.CharFilter(field_name='retest_plan__plan_no', lookup_expr='icontains')
+    executed_by = filters.CharFilter(field_name='executed_by', lookup_expr='icontains')
+    closure_action = filters.ChoiceFilter(choices=ClosureActionChoices.choices)
+    actual_from = filters.DateTimeFilter(field_name='actual_retest_time', lookup_expr='gte')
+    actual_to = filters.DateTimeFilter(field_name='actual_retest_time', lookup_expr='lte')
+
+    class Meta:
+        model = RetestPlanExecution
+        fields = ['retest_plan']

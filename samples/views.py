@@ -10,7 +10,9 @@ from rest_framework.views import APIView
 
 from .models import (
     WaxSample, BurnTest, WickProblemAlert, RetestClosure,
+    RetestPlan, RetestPlanExecution,
     StatusChoices, SmokeLevelChoices, ClosureActionChoices,
+    PlanStatusChoices, PlanSourceChoices,
     WICK_PROBLEM_THRESHOLD, RETARGET_MISSING_DAYS
 )
 from .serializers import (
@@ -21,9 +23,14 @@ from .serializers import (
     DurationDistributionSerializer, WickProblemAlertSerializer,
     RetestClosureSerializer, ClosureActionSerializer,
     ClosureSampleListSerializer, ClosureSampleDetailSerializer,
-    ClosureSummarySerializer, ClosureHandleSerializer
+    ClosureSummarySerializer, ClosureHandleSerializer,
+    PlanStatusSerializer, PlanSourceSerializer,
+    RetestPlanSerializer, RetestPlanListSerializer, RetestPlanDetailSerializer,
+    RetestPlanExecutionSerializer, RetestPlanExecutionListSerializer,
+    RetestPlanExecuteSerializer, RetestPlanCancelSerializer,
+    PlanSummarySerializer
 )
-from .filters import WaxSampleFilter, BurnTestFilter, ClosureSampleFilter, RetestClosureFilter
+from .filters import WaxSampleFilter, BurnTestFilter, ClosureSampleFilter, RetestClosureFilter, RetestPlanFilter, RetestPlanExecutionFilter
 
 
 class WaxSampleViewSet(viewsets.ModelViewSet):
@@ -686,3 +693,213 @@ class ClosureSummaryView(APIView):
         }
         serializer = ClosureSummarySerializer(result)
         return Response(serializer.data)
+
+
+class RetestPlanViewSet(viewsets.ModelViewSet):
+    queryset = RetestPlan.objects.select_related('wax_sample', 'source_burn_test').prefetch_related(
+        'executions', 'wax_sample__burn_tests', 'wax_sample__retest_closures'
+    )
+    filterset_class = RetestPlanFilter
+    search_fields = [
+        'plan_no', 'wax_sample__sample_code', 'wax_sample__test_batch',
+        'wax_sample__fragrance_code', 'wax_sample__wick_spec',
+        'wax_sample__cup_type', 'responsible_person', 'retest_goal',
+        'attention_notes', 'source_reason_detail'
+    ]
+    ordering_fields = [
+        'created_at', 'updated_at', 'planned_retest_time', 'plan_status',
+        'responsible_person'
+    ]
+    ordering = ['-created_at']
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return RetestPlanDetailSerializer
+        if self.action == 'list':
+            return RetestPlanListSerializer
+        return RetestPlanSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        wax_sample_id = request.data.get('wax_sample')
+        if wax_sample_id:
+            try:
+                sample = WaxSample.objects.get(id=wax_sample_id)
+            except WaxSample.DoesNotExist:
+                return Response(
+                    {'error': '蜡样不存在'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=False, methods=['get'], url_path='status-options')
+    def status_options(self, request):
+        data = [{'value': v, 'label': l} for v, l in PlanStatusChoices.choices]
+        return Response(PlanStatusSerializer(data, many=True).data)
+
+    @action(detail=False, methods=['get'], url_path='source-options')
+    def source_options(self, request):
+        data = [{'value': v, 'label': l} for v, l in PlanSourceChoices.choices]
+        return Response(PlanSourceSerializer(data, many=True).data)
+
+    @action(detail=True, methods=['post'], url_path='execute')
+    def execute_plan(self, request, pk=None):
+        plan = self.get_object()
+        if plan.plan_status == PlanStatusChoices.CANCELLED:
+            return Response(
+                {'error': '计划已取消，不可执行'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if plan.plan_status == PlanStatusChoices.COMPLETED:
+            return Response(
+                {'error': '计划已完成，不可再次执行'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        serializer = RetestPlanExecuteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        burn_test = None
+        if data.get('burn_test_id'):
+            try:
+                burn_test = BurnTest.objects.get(
+                    id=data['burn_test_id'],
+                    wax_sample=plan.wax_sample
+                )
+            except BurnTest.DoesNotExist:
+                return Response(
+                    {'error': '关联的测试记录不存在或不属于该蜡样'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        execution = RetestPlanExecution.objects.create(
+            retest_plan=plan,
+            burn_test=burn_test,
+            actual_retest_time=data['actual_retest_time'],
+            executed_by=data.get('executed_by', ''),
+            result_description=data.get('result_description', ''),
+            closure_action=data.get('closure_action'),
+            closure_remark=data.get('closure_remark', '')
+        )
+
+        return Response({
+            'execution_id': execution.id,
+            'plan_status': plan.plan_status,
+            'plan_status_display': plan.get_plan_status_display(),
+            'closure_action': execution.closure_action,
+            'closure_action_display': execution.get_closure_action_display() if execution.closure_action else None,
+            'sample_status': plan.wax_sample.status,
+            'sample_status_display': plan.wax_sample.get_status_display(),
+        })
+
+    @action(detail=True, methods=['post'], url_path='cancel')
+    def cancel_plan(self, request, pk=None):
+        plan = self.get_object()
+        if plan.plan_status in [PlanStatusChoices.COMPLETED, PlanStatusChoices.CANCELLED]:
+            return Response(
+                {'error': f'计划状态为{plan.get_plan_status_display()}，不可取消'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        serializer = RetestPlanCancelSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        plan.cancelled_reason = serializer.validated_data['cancelled_reason']
+        plan.plan_status = PlanStatusChoices.CANCELLED
+        plan.save(update_fields=['plan_status', 'cancelled_reason', 'updated_at'])
+        return Response({
+            'plan_id': plan.id,
+            'plan_status': plan.plan_status,
+            'plan_status_display': plan.get_plan_status_display(),
+        })
+
+    @action(detail=False, methods=['get'], url_path='summary')
+    def plan_summary(self, request):
+        total_plans = RetestPlan.objects.count()
+        planned_count = RetestPlan.objects.filter(plan_status=PlanStatusChoices.PLANNED).count()
+        in_progress_count = RetestPlan.objects.filter(plan_status=PlanStatusChoices.IN_PROGRESS).count()
+        completed_count = RetestPlan.objects.filter(plan_status=PlanStatusChoices.COMPLETED).count()
+        cancelled_count = RetestPlan.objects.filter(plan_status=PlanStatusChoices.CANCELLED).count()
+
+        overdue_count = 0
+        now = timezone.now()
+        for plan in RetestPlan.objects.filter(
+            plan_status__in=[PlanStatusChoices.PLANNED, PlanStatusChoices.IN_PROGRESS]
+        ):
+            if now > plan.planned_retest_time:
+                overdue_count += 1
+
+        by_status = []
+        for v, l in PlanStatusChoices.choices:
+            cnt = RetestPlan.objects.filter(plan_status=v).count()
+            by_status.append({'value': v, 'label': l, 'count': cnt})
+
+        by_source = []
+        for v, l in PlanSourceChoices.choices:
+            cnt = RetestPlan.objects.filter(source_reason=v).count()
+            by_source.append({'value': v, 'label': l, 'count': cnt})
+
+        by_responsible_qs = RetestPlan.objects.values('responsible_person').annotate(
+            count=Count('id')
+        ).order_by('-count')[:10]
+        by_responsible = list(by_responsible_qs)
+
+        recent_plans_qs = RetestPlan.objects.select_related('wax_sample').order_by('-created_at')[:10]
+        recent_plans = []
+        for p in recent_plans_qs:
+            recent_plans.append({
+                'id': p.id,
+                'plan_no': p.plan_no,
+                'plan_status': p.plan_status,
+                'plan_status_display': p.get_plan_status_display(),
+                'sample_code': p.wax_sample.sample_code,
+                'test_batch': p.wax_sample.test_batch,
+                'planned_retest_time': p.planned_retest_time,
+                'responsible_person': p.responsible_person,
+            })
+
+        result = {
+            'total_plans': total_plans,
+            'planned_count': planned_count,
+            'in_progress_count': in_progress_count,
+            'completed_count': completed_count,
+            'cancelled_count': cancelled_count,
+            'overdue_count': overdue_count,
+            'by_status': by_status,
+            'by_source': by_source,
+            'by_responsible': by_responsible,
+            'recent_plans': recent_plans,
+        }
+        serializer = PlanSummarySerializer(result)
+        return Response(serializer.data)
+
+
+class RetestPlanExecutionViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = RetestPlanExecution.objects.select_related(
+        'retest_plan', 'retest_plan__wax_sample', 'burn_test'
+    ).all()
+    filterset_class = RetestPlanExecutionFilter
+    search_fields = [
+        'retest_plan__plan_no', 'retest_plan__wax_sample__sample_code',
+        'retest_plan__wax_sample__test_batch', 'executed_by',
+        'result_description', 'closure_remark'
+    ]
+    ordering_fields = [
+        'created_at', 'actual_retest_time', 'executed_by', 'closure_action'
+    ]
+    ordering = ['-created_at']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return RetestPlanExecutionListSerializer
+        return RetestPlanExecutionSerializer
+
+
+@permission_classes([AllowAny])
+def retest_plan_dashboard(request):
+    return render(request, 'samples/retest_plan_dashboard.html')
