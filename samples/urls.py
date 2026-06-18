@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    WaxSampleViewSet, BurnTestViewSet,
+    WaxSampleViewSet, BurnTestViewSet, WickProblemAlertViewSet,
     ProblemWickRankingView, PendingRetestView, TestDurationDistributionView,
     health_check
 )
@@ -10,6 +10,7 @@ from .views import (
 router = DefaultRouter()
 router.register(r'samples', WaxSampleViewSet, basename='wax-sample')
 router.register(r'tests', BurnTestViewSet, basename='burn-test')
+router.register(r'wick-alerts', WickProblemAlertViewSet, basename='wick-alert')
 
 urlpatterns = [
     path('health/', health_check, name='health-check'),

@@ -1,6 +1,10 @@
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from datetime import timedelta
+
+
+RETARGET_MISSING_DAYS = 7
 
 
 class StatusChoices(models.TextChoices):
@@ -20,7 +24,7 @@ class SmokeLevelChoices(models.IntegerChoices):
     LEVEL_5 = 5, '5级-严重'
 
 
-SMOKE_HIGH_THRESHOLD = 3
+SMOKE_HIGH_THRESHOLD = 4
 TEMP_HIGH_THRESHOLD = 65.0
 TEMP_LOW_THRESHOLD = 30.0
 WICK_PROBLEM_THRESHOLD = 3
@@ -76,6 +80,17 @@ class WaxSample(models.Model):
     def retest_count(self):
         return self.burn_tests.filter(is_retest=True).count()
 
+    def has_pending_retest_missing(self):
+        if self.status != StatusChoices.PENDING_RETEST:
+            return False
+        latest = self.latest_test
+        if not latest:
+            return True
+        if not latest.is_retest:
+            cutoff = latest.test_time + timedelta(days=RETARGET_MISSING_DAYS)
+            return timezone.now() > cutoff
+        return False
+
 
 class BurnTest(models.Model):
     wax_sample = models.ForeignKey(
@@ -112,10 +127,20 @@ class BurnTest(models.Model):
     def __str__(self):
         return f'{self.wax_sample} - 第{self.test_round}轮'
 
+    def clean(self):
+        super().clean()
+        if self.ignite_time and self.extinguish_time:
+            if self.extinguish_time < self.ignite_time:
+                raise ValidationError({
+                    'extinguish_time': '熄灭时间不能早于点燃时间，时长不可为负。'
+                })
+
     @property
     def burn_duration_minutes(self):
         if self.ignite_time and self.extinguish_time:
             delta = self.extinguish_time - self.ignite_time
+            if delta.total_seconds() < 0:
+                return None
             return round(delta.total_seconds() / 60, 1)
         return None
 
@@ -135,19 +160,30 @@ class BurnTest(models.Model):
                 flags['temp_low'] = True
                 warnings.append(f'杯壁温度偏低({self.cup_wall_temp}℃)')
 
-        if self.is_retest:
-            if not self.smoke_level or self.cup_wall_temp is None or self.melt_pool_diameter is None:
-                flags['retest_data_missing'] = True
-                warnings.append('复测关键数据缺失')
+        if self.abnormal_desc:
+            if self.enter_next_round is None:
+                flags['next_round_missing'] = True
+                warnings.append('存在异常但未标注是否进入下一轮')
+            if self.enter_next_round is True and not self.retest_suggestion:
+                flags['suggestion_missing'] = True
+                warnings.append('标注进入下一轮但未填写复测建议')
 
-        if self.abnormal_desc and not self.retest_suggestion:
-            flags['suggestion_missing'] = True
-            warnings.append('存在异常但未填写复测建议')
+        sample = self.wax_sample
+        if sample_id := self.wax_sample_id:
+            if sample and sample.status == StatusChoices.PENDING_RETEST:
+                non_retest = sample.burn_tests.filter(is_retest=False).order_by('-test_time').first()
+                if non_retest:
+                    cutoff = non_retest.test_time + timedelta(days=RETARGET_MISSING_DAYS)
+                    no_retest_done = not sample.burn_tests.filter(is_retest=True, test_time__gt=non_retest.test_time).exists()
+                    if timezone.now() > cutoff and no_retest_done:
+                        flags['retest_action_missing'] = True
+                        warnings.append(f'待复测已超{RETARGET_MISSING_DAYS}天未执行')
 
         flags['warnings'] = warnings
         return flags
 
     def save(self, *args, **kwargs):
+        self.full_clean()
         self.auto_flags = self.analyze_flags()
         super().save(*args, **kwargs)
         self._check_wick_cluster()
@@ -156,18 +192,49 @@ class BurnTest(models.Model):
         if self.auto_flags.get('smoke_high') or self.auto_flags.get('temp_high'):
             wick_spec = self.wax_sample.wick_spec
             test_batch = self.wax_sample.test_batch
-            problem_count = BurnTest.objects.filter(
+            problem_qs = BurnTest.objects.filter(
                 wax_sample__wick_spec=wick_spec,
                 wax_sample__test_batch=test_batch,
             ).filter(
                 models.Q(auto_flags__smoke_high=True)
                 | models.Q(auto_flags__temp_high=True)
-            ).count()
+            )
+            problem_count = problem_qs.count()
             if problem_count >= WICK_PROBLEM_THRESHOLD:
-                from samples.signals import wick_problem_detected
-                wick_problem_detected.send(
-                    sender=self.__class__,
+                affected = list(
+                    WaxSample.objects.filter(
+                        wick_spec=wick_spec,
+                        test_batch=test_batch,
+                        burn_tests__in=problem_qs
+                    ).distinct().values_list('sample_code', flat=True)
+                )
+                WickProblemAlert.objects.update_or_create(
                     wick_spec=wick_spec,
                     test_batch=test_batch,
-                    count=problem_count
+                    defaults={
+                        'problem_count': problem_count,
+                        'affected_samples': affected,
+                        'last_triggered': timezone.now(),
+                        'resolved': False,
+                    }
                 )
+
+
+class WickProblemAlert(models.Model):
+    wick_spec = models.CharField('芯线规格', max_length=50)
+    test_batch = models.CharField('测试批次', max_length=50)
+    problem_count = models.PositiveIntegerField('问题记录数', default=0)
+    affected_samples = models.JSONField('涉及蜡样', default=list, blank=True)
+    last_triggered = models.DateTimeField('最后触发时间', auto_now=True)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    resolved = models.BooleanField('是否已处理', default=False)
+    note = models.TextField('处理备注', blank=True, default='')
+
+    class Meta:
+        verbose_name = '芯线问题集中告警'
+        verbose_name_plural = '芯线问题集中告警'
+        ordering = ['-last_triggered']
+        unique_together = [['wick_spec', 'test_batch']]
+
+    def __str__(self):
+        return f'[{self.test_batch}] {self.wick_spec}: {self.problem_count}个问题'

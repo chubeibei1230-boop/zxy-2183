@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import WaxSample, BurnTest
+from .models import WaxSample, BurnTest, WickProblemAlert
 
 
 class BurnTestInline(admin.TabularInline):
@@ -32,11 +32,23 @@ class WaxSampleAdmin(admin.ModelAdmin):
 class BurnTestAdmin(admin.ModelAdmin):
     list_display = [
         'wax_sample', 'test_round', 'is_retest', 'ignite_time',
-        'smoke_level', 'cup_wall_temp', 'enter_next_round', 'tested_by'
+        'smoke_level', 'cup_wall_temp', 'burn_duration_minutes',
+        'enter_next_round', 'tested_by'
     ]
     list_filter = ['is_retest', 'smoke_level', 'enter_next_round']
     search_fields = [
         'wax_sample__sample_code', 'wax_sample__test_batch',
         'tested_by', 'abnormal_desc', 'retest_suggestion'
     ]
-    readonly_fields = ['auto_flags', 'test_time']
+    readonly_fields = ['auto_flags', 'test_time', 'burn_duration_minutes']
+
+
+@admin.register(WickProblemAlert)
+class WickProblemAlertAdmin(admin.ModelAdmin):
+    list_display = [
+        'wick_spec', 'test_batch', 'problem_count',
+        'resolved', 'last_triggered'
+    ]
+    list_filter = ['resolved', 'test_batch', 'wick_spec']
+    search_fields = ['wick_spec', 'test_batch', 'note']
+    readonly_fields = ['created_at', 'last_triggered']

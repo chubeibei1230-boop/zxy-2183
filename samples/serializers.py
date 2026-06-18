@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import WaxSample, BurnTest, StatusChoices, SmokeLevelChoices
+from .models import WaxSample, BurnTest, WickProblemAlert, StatusChoices, SmokeLevelChoices
 
 
 class StatusSerializer(serializers.Serializer):
@@ -23,10 +23,13 @@ class BurnTestSerializer(serializers.ModelSerializer):
         read_only_fields = ('auto_flags', 'test_time')
 
     def validate(self, attrs):
-        ignite = attrs.get('ignite_time')
-        extinguish = attrs.get('extinguish_time')
+        instance = self.instance
+        ignite = attrs.get('ignite_time', getattr(instance, 'ignite_time', None) if instance else None)
+        extinguish = attrs.get('extinguish_time', getattr(instance, 'extinguish_time', None) if instance else None)
         if ignite and extinguish and extinguish < ignite:
-            raise serializers.ValidationError('熄灭时间不能早于点燃时间')
+            raise serializers.ValidationError({
+                'extinguish_time': '熄灭时间不能早于点燃时间，时长不可为负。'
+            })
         return attrs
 
     def create(self, validated_data):
@@ -109,3 +112,10 @@ class DurationDistributionSerializer(serializers.Serializer):
     range_max = serializers.IntegerField(allow_null=True)
     count = serializers.IntegerField()
     percentage = serializers.FloatField()
+
+
+class WickProblemAlertSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WickProblemAlert
+        fields = '__all__'
+        read_only_fields = ('created_at', 'last_triggered')
