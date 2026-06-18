@@ -7,6 +7,13 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
+
+
+class FlexiblePageNumberPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 500
 
 from .models import (
     WaxSample, BurnTest, WickProblemAlert, RetestClosure,
@@ -35,6 +42,7 @@ from .filters import WaxSampleFilter, BurnTestFilter, ClosureSampleFilter, Retes
 
 class WaxSampleViewSet(viewsets.ModelViewSet):
     queryset = WaxSample.objects.select_related().prefetch_related('burn_tests')
+    pagination_class = FlexiblePageNumberPagination
     filterset_class = WaxSampleFilter
     search_fields = [
         'sample_code', 'test_batch', 'fragrance_code',
@@ -121,6 +129,7 @@ class WaxSampleViewSet(viewsets.ModelViewSet):
 
 class BurnTestViewSet(viewsets.ModelViewSet):
     queryset = BurnTest.objects.select_related('wax_sample').all()
+    pagination_class = FlexiblePageNumberPagination
     filterset_class = BurnTestFilter
     search_fields = [
         'wax_sample__sample_code', 'wax_sample__test_batch',
@@ -273,6 +282,7 @@ class BurnTestViewSet(viewsets.ModelViewSet):
 class WickProblemAlertViewSet(viewsets.ModelViewSet):
     queryset = WickProblemAlert.objects.all().order_by('-last_triggered')
     serializer_class = WickProblemAlertSerializer
+    pagination_class = FlexiblePageNumberPagination
     filterset_fields = ['wick_spec', 'test_batch', 'resolved']
     search_fields = ['wick_spec', 'test_batch', 'note']
     ordering_fields = ['last_triggered', 'problem_count', 'created_at']
@@ -461,6 +471,7 @@ def closure_dashboard(request):
 class RetestClosureViewSet(viewsets.ModelViewSet):
     queryset = RetestClosure.objects.select_related('wax_sample', 'burn_test').all()
     serializer_class = RetestClosureSerializer
+    pagination_class = FlexiblePageNumberPagination
     filterset_class = RetestClosureFilter
     search_fields = [
         'wax_sample__sample_code', 'wax_sample__test_batch',
@@ -471,6 +482,7 @@ class RetestClosureViewSet(viewsets.ModelViewSet):
 
 
 class ClosureSampleViewSet(viewsets.ReadOnlyModelViewSet):
+    pagination_class = FlexiblePageNumberPagination
     filterset_class = ClosureSampleFilter
     search_fields = [
         'sample_code', 'test_batch', 'fragrance_code',
@@ -699,6 +711,7 @@ class RetestPlanViewSet(viewsets.ModelViewSet):
     queryset = RetestPlan.objects.select_related('wax_sample', 'source_burn_test').prefetch_related(
         'executions', 'wax_sample__burn_tests', 'wax_sample__retest_closures'
     )
+    pagination_class = FlexiblePageNumberPagination
     filterset_class = RetestPlanFilter
     search_fields = [
         'plan_no', 'wax_sample__sample_code', 'wax_sample__test_batch',
@@ -883,6 +896,7 @@ class RetestPlanExecutionViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = RetestPlanExecution.objects.select_related(
         'retest_plan', 'retest_plan__wax_sample', 'burn_test'
     ).all()
+    pagination_class = FlexiblePageNumberPagination
     filterset_class = RetestPlanExecutionFilter
     search_fields = [
         'retest_plan__plan_no', 'retest_plan__wax_sample__sample_code',

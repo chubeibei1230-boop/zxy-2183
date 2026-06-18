@@ -51,8 +51,15 @@ class BurnTestListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'test_round', 'is_retest', 'ignite_time', 'extinguish_time',
             'melt_pool_diameter', 'smoke_level', 'smoke_level_display',
-            'cup_wall_temp', 'burn_duration_minutes', 'auto_flags', 'test_time'
+            'cup_wall_temp', 'burn_duration_minutes', 'auto_flags', 'test_time',
+            'tested_by', 'enter_next_round', 'abnormal_desc', 'retest_suggestion'
         ]
+
+
+class BurnTestSimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BurnTest
+        fields = ['id', 'test_round', 'test_time']
 
 
 class WaxSampleSerializer(serializers.ModelSerializer):
@@ -131,6 +138,7 @@ class ClosureActionSerializer(serializers.Serializer):
 class RetestClosureSerializer(serializers.ModelSerializer):
     action_display = serializers.CharField(source='get_action_display', read_only=True)
     wax_sample_display = serializers.CharField(source='wax_sample.__str__', read_only=True)
+    burn_test = BurnTestSimpleSerializer(read_only=True, allow_null=True)
 
     class Meta:
         model = RetestClosure
@@ -249,6 +257,7 @@ class RetestPlanExecutionSerializer(serializers.ModelSerializer):
 
 class RetestPlanExecutionListSerializer(serializers.ModelSerializer):
     closure_action_display = serializers.CharField(source='get_closure_action_display', read_only=True)
+    burn_test = BurnTestSimpleSerializer(read_only=True, allow_null=True)
 
     class Meta:
         model = RetestPlanExecution

@@ -509,8 +509,11 @@ class RetestPlanExecution(models.Model):
         if plan.plan_status == PlanStatusChoices.PLANNED:
             plan.plan_status = PlanStatusChoices.IN_PROGRESS
             plan.save(update_fields=['plan_status', 'updated_at'])
-        if self.closure_action:
+        if self.closure_action and self.closure_action != ClosureActionChoices.CONTINUE_RETEST:
             plan.plan_status = PlanStatusChoices.COMPLETED
+            plan.save(update_fields=['plan_status', 'updated_at'])
+        elif self.closure_action == ClosureActionChoices.CONTINUE_RETEST:
+            plan.plan_status = PlanStatusChoices.PLANNED
             plan.save(update_fields=['plan_status', 'updated_at'])
 
     def _create_closure_if_needed(self):
