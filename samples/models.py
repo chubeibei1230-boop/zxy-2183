@@ -198,6 +198,8 @@ class BurnTest(models.Model):
     def _update_sample_status_after_save(self):
         sample = self.wax_sample
         if self.extinguish_time is None:
+            if self.is_retest and sample.status == StatusChoices.PENDING_RETEST:
+                return
             if sample.status in [StatusChoices.PENDING_TEST, StatusChoices.PENDING_RETEST]:
                 sample.status = StatusChoices.IN_TEST
                 sample.save(update_fields=['status', 'updated_at'])
