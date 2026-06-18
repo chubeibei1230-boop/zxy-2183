@@ -193,32 +193,64 @@ class BurnTest(models.Model):
         self.auto_flags = self.analyze_flags()
         super().save(*args, **kwargs)
         self._check_wick_cluster()
+        self._update_sample_status_after_save()
+
+    def _update_sample_status_after_save(self):
+        sample = self.wax_sample
+        if self.extinguish_time is None:
+            if sample.status in [StatusChoices.PENDING_TEST, StatusChoices.PENDING_RETEST]:
+                sample.status = StatusChoices.IN_TEST
+                sample.save(update_fields=['status', 'updated_at'])
+            return
+        has_abnormal = bool(
+            self.auto_flags.get('smoke_high')
+            or self.auto_flags.get('temp_high')
+            or self.abnormal_desc
+        )
+        if self.enter_next_round is not None:
+            if self.enter_next_round:
+                if self.is_retest and not has_abnormal:
+                    sample.status = StatusChoices.VERSION_READY
+                else:
+                    sample.status = StatusChoices.PENDING_RETEST
+            else:
+                if has_abnormal:
+                    sample.status = StatusChoices.NEED_REFORM
+                else:
+                    sample.status = StatusChoices.PENDING_RETEST
+        else:
+            if has_abnormal:
+                sample.status = StatusChoices.PENDING_RETEST
+            else:
+                sample.status = StatusChoices.PENDING_RETEST
+        sample.save(update_fields=['status', 'updated_at'])
 
     def _check_wick_cluster(self):
         if self.auto_flags.get('smoke_high') or self.auto_flags.get('temp_high'):
             wick_spec = self.wax_sample.wick_spec
             test_batch = self.wax_sample.test_batch
-            problem_qs = BurnTest.objects.filter(
-                wax_sample__wick_spec=wick_spec,
-                wax_sample__test_batch=test_batch,
-            ).filter(
-                models.Q(auto_flags__smoke_high=True)
-                | models.Q(auto_flags__temp_high=True)
+            sample_ids_q = WaxSample.objects.filter(
+                wick_spec=wick_spec,
+                test_batch=test_batch,
             )
-            problem_count = problem_qs.count()
-            if problem_count >= WICK_PROBLEM_THRESHOLD:
+            problem_sample_ids = set()
+            for s in sample_ids_q.prefetch_related('burn_tests'):
+                for t in s.burn_tests.all():
+                    if t.auto_flags.get('smoke_high') or t.auto_flags.get('temp_high'):
+                        problem_sample_ids.add(s.id)
+                        break
+            problem_sample_count = len(problem_sample_ids)
+            if problem_sample_count >= WICK_PROBLEM_THRESHOLD:
                 affected = list(
                     WaxSample.objects.filter(
-                        wick_spec=wick_spec,
-                        test_batch=test_batch,
-                        burn_tests__in=problem_qs
-                    ).distinct().values_list('sample_code', flat=True)
+                        id__in=problem_sample_ids
+                    ).values_list('sample_code', flat=True)
                 )
                 WickProblemAlert.objects.update_or_create(
                     wick_spec=wick_spec,
                     test_batch=test_batch,
                     defaults={
-                        'problem_count': problem_count,
+                        'problem_count': problem_sample_count,
                         'affected_samples': affected,
                         'last_triggered': timezone.now(),
                         'resolved': False,
@@ -229,7 +261,7 @@ class BurnTest(models.Model):
 class WickProblemAlert(models.Model):
     wick_spec = models.CharField('芯线规格', max_length=50)
     test_batch = models.CharField('测试批次', max_length=50)
-    problem_count = models.PositiveIntegerField('问题记录数', default=0)
+    problem_count = models.PositiveIntegerField('问题样品数', default=0)
     affected_samples = models.JSONField('涉及蜡样', default=list, blank=True)
     last_triggered = models.DateTimeField('最后触发时间', auto_now=True)
     created_at = models.DateTimeField('创建时间', auto_now_add=True)

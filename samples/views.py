@@ -1,6 +1,7 @@
 from django.db import models
 from django.db.models import Q, Count, Min, Max
 from django.utils import timezone
+from django.shortcuts import render
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -144,9 +145,9 @@ class BurnTestViewSet(viewsets.ModelViewSet):
             is_retest = request.data.get('is_retest', False)
             if not request.data.get('test_round'):
                 request.data['test_round'] = existing_rounds + 1
-            if is_retest and sample.status != StatusChoices.PENDING_RETEST:
-                    sample.status = StatusChoices.PENDING_RETEST
-                    sample.save(update_fields=['status', 'updated_at'])
+            if is_retest and sample.status not in [StatusChoices.PENDING_RETEST, StatusChoices.IN_TEST]:
+                sample.status = StatusChoices.PENDING_RETEST
+                sample.save(update_fields=['status', 'updated_at'])
         return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
@@ -155,21 +156,6 @@ class BurnTestViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
-
-        if instance.extinguish_time and instance.enter_next_round is not None:
-            sample = instance.wax_sample
-            if instance.enter_next_round:
-                if instance.is_retest:
-                    sample.status = StatusChoices.VERSION_READY
-                else:
-                    sample.status = StatusChoices.PENDING_RETEST
-            else:
-                if instance.abnormal_desc or instance.auto_flags.get('smoke_high') or instance.auto_flags.get('temp_high'):
-                    sample.status = StatusChoices.NEED_REFORM
-                else:
-                    sample.status = StatusChoices.PENDING_RETEST
-            sample.save(update_fields=['status', 'updated_at'])
-
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'], url_path='abnormal-alerts')
@@ -458,6 +444,11 @@ def health_check(request):
         'version': '1.1.0',
         'timestamp': timezone.now()
     })
+
+
+@permission_classes([AllowAny])
+def closure_dashboard(request):
+    return render(request, 'samples/closure_dashboard.html')
 
 
 class RetestClosureViewSet(viewsets.ModelViewSet):

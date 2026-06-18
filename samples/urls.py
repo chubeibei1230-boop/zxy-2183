@@ -5,7 +5,7 @@ from .views import (
     WaxSampleViewSet, BurnTestViewSet, WickProblemAlertViewSet,
     ProblemWickRankingView, PendingRetestView, TestDurationDistributionView,
     RetestClosureViewSet, ClosureSampleViewSet, ClosureSummaryView,
-    health_check
+    health_check, closure_dashboard
 )
 
 router = DefaultRouter()
@@ -22,4 +22,5 @@ urlpatterns = [
     path('statistics/pending-retests/', PendingRetestView.as_view(), name='pending-retests'),
     path('statistics/duration-distribution/', TestDurationDistributionView.as_view(), name='duration-distribution'),
     path('closure/summary/', ClosureSummaryView.as_view(), name='closure-summary'),
+    path('closure/dashboard/', closure_dashboard, name='closure-dashboard'),
 ]

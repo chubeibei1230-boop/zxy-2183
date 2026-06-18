@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>复测闭环管理 - 香氛蜡样研发管理系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            color: #303133;
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 40px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .header h1 { font-size: 22px; font-weight: 600; }
+        .header p { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+        .container { max-width: 1440px; margin: 0 auto; padding: 24px 40px; }
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 24px 0 16px;
+            padding-left: 10px;
+            border-left: 4px solid #667eea;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-bottom: 8px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px 24px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .stat-card .stat-label {
+            font-size: 13px;
+            color: #909399;
+            margin-bottom: 8px;
+        }
+        .stat-card .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            line-height: 1.1;
+        }
+        .stat-card .stat-sub {
+            font-size: 12px;
+            color: #909399;
+            margin-top: 6px;
+        }
+        .stat-pending { border-top: 3px solid #e6a23c; }
+        .stat-pending .stat-value { color: #e6a23c; }
+        .stat-overdue { border-top: 3px solid #f56c6c; }
+        .stat-overdue .stat-value { color: #f56c6c; }
+        .stat-reform { border-top: 3px solid #909399; }
+        .stat-reform .stat-value { color: #909399; }
+        .stat-wick { border-top: 3px solid #f56c6c; }
+        .stat-wick .stat-value { color: #f56c6c; }
+        .stat-abnormal { border-top: 3px solid #67c23a; }
+        .stat-abnormal .stat-value { color: #67c23a; }
+        .two-col {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+        .panel {
+            background: white;
+            border-radius: 10px;
+            padding: 20px 24px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .panel-title { font-size: 15px; font-weight: 600; }
+        .chart-area {
+            height: 220px;
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ebeef5;
+            margin-bottom: 12px;
+        }
+        .chart-bar-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            height: 100%;
+            justify-content: flex-end;
+        }
+        .chart-bars {
+            display: flex;
+            gap: 3px;
+            align-items: flex-end;
+            height: 100%;
+            width: 100%;
+            justify-content: center;
+        }
+        .chart-bar {
+            width: 14px;
+            border-radius: 3px 3px 0 0;
+            transition: opacity 0.2s;
+            min-height: 2px;
+        }
+        .chart-bar:hover { opacity: 0.75; }
+        .bar-abnormal { background: linear-gradient(180deg, #67c23a, #85ce61); }
+        .bar-smoke { background: linear-gradient(180deg, #e6a23c, #ebb563); }
+        .bar-temp { background: linear-gradient(180deg, #f56c6c, #f78989); }
+        .chart-x-label {
+            font-size: 11px;
+            color: #909399;
+        }
+        .chart-legend {
+            display: flex;
+            gap: 18px;
+            font-size: 12px;
+            color: #606266;
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+        }
+        .ranking-list { list-style: none; }
+        .ranking-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px dashed #ebeef5;
+        }
+        .ranking-item:last-child { border-bottom: none; }
+        .ranking-num {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #f4f4f5;
+            color: #909399;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        .ranking-item:nth-child(1) .ranking-num { background: #f56c6c; color: white; }
+        .ranking-item:nth-child(2) .ranking-num { background: #e6a23c; color: white; }
+        .ranking-item:nth-child(3) .ranking-num { background: #67c23a; color: white; }
+        .ranking-name {
+            flex: 1;
+            font-size: 13px;
+            color: #303133;
+            font-weight: 500;
+        }
+        .ranking-bar {
+            width: 100px;
+            height: 6px;
+            background: #ebeef5;
+            border-radius: 3px;
+            margin: 0 12px;
+            overflow: hidden;
+        }
+        .ranking-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 3px;
+        }
+        .ranking-value {
+            font-size: 13px;
+            color: #606266;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .filter-bar {
+            background: white;
+            border-radius: 10px;
+            padding: 16px 24px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            margin-bottom: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+        .filter-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+        }
+        .filter-item label { color: #606266; white-space: nowrap; }
+        .filter-item input, .filter-item select {
+            padding: 6px 10px;
+            border: 1px solid #dcdfe6;
+            border-radius: 4px;
+            font-size: 13px;
+            outline: none;
+            min-width: 100px;
+        }
+        .filter-item input:focus, .filter-item select:focus {
+            border-color: #667eea;
+        }
+        .btn {
+            padding: 7px 18px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover { background: #5a6fd8; }
+        .btn-default {
+            background: white;
+            color: #606266;
+            border: 1px solid #dcdfe6;
+        }
+        .btn-default:hover { color: #667eea; border-color: #c6e2ff; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+        .table-wrap {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th {
+            background: #fafafa;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: #606266;
+            border-bottom: 1px solid #ebeef5;
+            white-space: nowrap;
+        }
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f5f7fa;
+            color: #303133;
+        }
+        tr:hover td { background: #fafcff; }
+        .tag {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .tag-pending { background: #fdf6ec; color: #e6a23c; border: 1px solid #faecd8; }
+        .tag-overdue { background: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; }
+        .tag-reform { background: #f4f4f5; color: #909399; border: 1px solid #e9e9eb; }
+        .tag-wick { background: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; }
+        .tag-normal { background: #f0f9eb; color: #67c23a; border: 1px solid #e1f3d8; }
+        .tag-info { background: #ecf5ff; color: #409eff; border: 1px solid #d9ecff; }
+        .link-text {
+            color: #667eea;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .link-text:hover { text-decoration: underline; }
+        .empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: #909399;
+            font-size: 14px;
+        }
+        /* Modal */
+        .modal-mask {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-mask.show { display: flex; }
+        .modal {
+            background: white;
+            border-radius: 10px;
+            width: 720px;
+            max-width: 92vw;
+            max-height: 88vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .modal-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #ebeef5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-title { font-size: 16px; font-weight: 600; }
+        .modal-close {
+            border: none;
+            background: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #909399;
+            line-height: 1;
+        }
+        .modal-body { padding: 20px 24px; }
+        .modal-footer {
+            padding: 14px 24px;
+            border-top: 1px solid #ebeef5;
+            text-align: right;
+        }
+        .info-row {
+            display: grid;
+            grid-template-columns: 100px 1fr;
+            gap: 8px 12px;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+        .info-label { color: #909399; }
+        .info-value { color: #303133; font-weight: 500; word-break: break-all; }
+        .sub-card {
+            background: #fafbfc;
+            border: 1px solid #ebeef5;
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin: 14px 0;
+        }
+        .sub-card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #606266;
+            margin-bottom: 10px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 100px 1fr;
+            gap: 8px;
+            margin-bottom: 14px;
+            align-items: start;
+        }
+        .form-row label {
+            padding-top: 8px;
+            font-size: 13px;
+            color: #606266;
+            font-weight: 500;
+        }
+        .form-row label .req { color: #f56c6c; margin-right: 3px; }
+        .form-row select, .form-row input, .form-row textarea {
+            padding: 7px 12px;
+            border: 1px solid #dcdfe6;
+            border-radius: 4px;
+            font-size: 13px;
+            outline: none;
+            font-family: inherit;
+        }
+        .form-row textarea { resize: vertical; min-height: 70px; }
+        .form-row select:focus, .form-row input:focus, .form-row textarea:focus {
+            border-color: #667eea;
+        }
+        .history-item {
+            padding: 10px 0;
+            border-bottom: 1px dashed #ebeef5;
+            font-size: 13px;
+        }
+        .history-item:last-child { border-bottom: none; }
+        .history-head {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        .alert-list { list-style: none; }
+        .alert-item {
+            padding: 8px 10px;
+            background: #fef0f0;
+            border-left: 3px solid #f56c6c;
+            border-radius: 0 4px 4px 0;
+            margin-bottom: 6px;
+            font-size: 12px;
+            color: #f56c6c;
+        }
+        .tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid #ebeef5;
+            margin-bottom: 16px;
+        }
+        .tab {
+            padding: 10px 18px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #606266;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: 600;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>复测闭环管理</h1>
+    <p>集中管理待复测、需改配、异常告警和芯线问题样品，形成完整业务闭环</p>
+</div>
+
+<div class="container">
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <div class="section-title">近期异常趋势与风险集中点</div>
+    <div class="two-col">
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-title">近7天异常趋势</span>
+                <div class="chart-legend">
+                    <span class="legend-item"><span class="legend-dot" style="background:#67c23a"></span>异常总数</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#e6a23c"></span>烟量偏高</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#f56c6c"></span>温度偏高</span>
+                </div>
+            </div>
+            <div class="chart-area" id="trendChart"></div>
+        </div>
+        <div>
+            <div class="tabs">
+                <div class="tab active" data-tab="batch">按批次Top5</div>
+                <div class="tab" data-tab="wick">按芯线Top5</div>
+            </div>
+            <div class="tab-content active" id="tab-batch">
+                <div class="panel">
+                    <ul class="ranking-list" id="batchRanking"></ul>
+                </div>
+            </div>
+            <div class="tab-content" id="tab-wick">
+                <div class="panel">
+                    <ul class="ranking-list" id="wickRanking"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-title">待跟进蜡样列表</div>
+    <div class="filter-bar">
+        <div class="filter-item">
+            <label>测试批次</label>
+            <input type="text" id="f_batch" placeholder="请输入">
+        </div>
+        <div class="filter-item">
+            <label>香型代号</label>
+            <input type="text" id="f_fragrance" placeholder="请输入">
+        </div>
+        <div class="filter-item">
+            <label>杯型</label>
+            <input type="text" id="f_cup" placeholder="请输入">
+        </div>
+        <div class="filter-item">
+            <label>芯线规格</label>
+            <input type="text" id="f_wick" placeholder="请输入">
+        </div>
+        <div class="filter-item">
+            <label>责任人</label>
+            <input type="text" id="f_person" placeholder="请输入">
+        </div>
+        <div class="filter-item">
+            <label>状态</label>
+            <select id="f_status">
+                <option value="">全部</option>
+                <option value="pending_retest">待复测</option>
+                <option value="need_reform">需改配</option>
+            </select>
+        </div>
+        <div class="filter-item">
+            <label>超期</label>
+            <select id="f_overdue">
+                <option value="">全部</option>
+                <option value="true">仅超期</option>
+                <option value="false">未超期</option>
+            </select>
+        </div>
+        <div class="filter-item">
+            <label>芯线告警</label>
+            <select id="f_wickAlert">
+                <option value="">全部</option>
+                <option value="true">有关联</option>
+                <option value="false">无关联</option>
+            </select>
+        </div>
+        <button class="btn btn-primary" onclick="loadSamples()">查询</button>
+        <button class="btn btn-default" onclick="resetFilter()">重置</button>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>蜡样编号</th>
+                    <th>测试批次</th>
+                    <th>香型</th>
+                    <th>杯型</th>
+                    <th>芯线规格</th>
+                    <th>责任人</th>
+                    <th>状态</th>
+                    <th>异常次数</th>
+                    <th>最近测试</th>
+                    <th>复测建议</th>
+                    <th>关联芯线风险</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="sampleTbody"></tbody>
+        </table>
+        <div class="empty" id="sampleEmpty" style="display:none">暂无待跟进蜡样数据</div>
+    </div>
+</div>
+
+<!-- 详情模态框 -->
+<div class="modal-mask" id="detailModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">蜡样详情 - <span id="modalSampleCode"></span></span>
+            <button class="modal-close" onclick="closeModal('detailModal')">&times;</button>
+        </div>
+        <div class="modal-body" id="detailBody"></div>
+    </div>
+</div>
+
+<!-- 处理模态框 -->
+<div class="modal-mask" id="handleModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">记录复测处理结论</span>
+            <button class="modal-close" onclick="closeModal('handleModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="info-row">
+                <span class="info-label">蜡样编号</span>
+                <span class="info-value" id="handleSampleCode"></span>
+            </div>
+            <div class="info-row" style="margin-bottom:16px">
+                <span class="info-label">当前状态</span>
+                <span class="info-value" id="handleStatus"></span>
+            </div>
+            <form id="handleForm">
+                <input type="hidden" id="handleSampleId">
+                <div class="form-row">
+                    <label><span class="req">*</span>处理结论</label>
+                    <select id="h_action" required></select>
+                </div>
+                <div class="form-row">
+                    <label>处理人</label>
+                    <input type="text" id="h_handler" placeholder="请输入处理人姓名">
+                </div>
+                <div class="form-row">
+                    <label>处理备注</label>
+                    <textarea id="h_remark" placeholder="请输入详细处理说明..."></textarea>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('handleModal')">取消</button>
+            <button class="btn btn-primary" onclick="submitHandle()">确认提交</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = '/api';
+
+async function fetchJson(url) {
+    const r = await fetch(API + url);
+    if (!r.ok) throw new Error('请求失败');
+    return r.json();
+}
+
+async function postJson(url, data) {
+    const r = await fetch(API + url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || '请求失败');
+    }
+    return r.json();
+}
+
+function fmtDate(dt) {
+    if (!dt) return '-';
+    const d = new Date(dt);
+    const pad = n => n < 10 ? '0'+n : n;
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function statusTag(s, overdue) {
+    if (s === 'pending_retest') {
+        if (overdue) return '<span class="tag tag-overdue">超期待复测</span>';
+        return '<span class="tag tag-pending">待复测</span>';
+    }
+    if (s === 'need_reform') return '<span class="tag tag-reform">需改配</span>';
+    return '<span class="tag tag-info">' + s + '</span>';
+}
+
+/* ============ 加载汇总 ============ */
+async function loadSummary() {
+    try {
+        const s = await fetchJson('/closure/summary/');
+        const cards = [
+            { cls: 'stat-pending', label: '待复测数量', val: s.pending_retest_count, sub: '需要安排复测跟进' },
+            { cls: 'stat-overdue', label: '超期数量', val: s.overdue_retest_count, sub: '超过7天未执行复测', alert: s.overdue_retest_count > 0 },
+            { cls: 'stat-reform', label: '需改配数量', val: s.need_reform_count, sub: '需要调整配方或芯线' },
+            { cls: 'stat-wick', label: '未处理芯线告警', val: s.unresolved_wick_alerts, sub: '集中问题风险需关注' },
+            { cls: 'stat-abnormal', label: '异常测试总数', val: s.abnormal_alerts_count, sub: '累计异常记录数' }
+        ];
+        document.getElementById('statsGrid').innerHTML = cards.map(c => `
+            <div class="stat-card ${c.cls}">
+                <div class="stat-label">${c.label}</div>
+                <div class="stat-value">${c.val}</div>
+                <div class="stat-sub">${c.sub}</div>
+            </div>
+        `).join('');
+        renderTrend(s.recent_abnormal_trend);
+        renderRanking('batchRanking', s.by_batch_top5, 'test_batch', '批次');
+        renderRanking('wickRanking', s.by_wick_top5, 'wick_spec', '芯线');
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function renderTrend(trend) {
+    if (!trend || !trend.length) return;
+    const max = Math.max(1, ...trend.flatMap(d => [d.abnormal_count, d.smoke_high_count, d.temp_high_count]));
+    document.getElementById('trendChart').innerHTML = trend.map(d => {
+        const h1 = (d.abnormal_count / max * 170).toFixed(0);
+        const h2 = (d.smoke_high_count / max * 170).toFixed(0);
+        const h3 = (d.temp_high_count / max * 170).toFixed(0);
+        const date = new Date(d.date);
+        const label = (date.getMonth()+1) + '/' + date.getDate();
+        return `
+            <div class="chart-bar-group">
+                <div class="chart-bars">
+                    <div class="chart-bar bar-abnormal" style="height:${h1}px" title="异常总数:${d.abnormal_count}"></div>
+                    <div class="chart-bar bar-smoke" style="height:${h2}px" title="烟量偏高:${d.smoke_high_count}"></div>
+                    <div class="chart-bar bar-temp" style="height:${h3}px" title="温度偏高:${d.temp_high_count}"></div>
+                </div>
+                <div class="chart-x-label">${label}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderRanking(elId, list, keyField, labelPrefix) {
+    const el = document.getElementById(elId);
+    if (!list || !list.length) {
+        el.innerHTML = '<li class="ranking-item" style="justify-content:center;color:#909399;padding:20px 0">暂无数据</li>';
+        return;
+    }
+    const max = list[0].total || 1;
+    el.innerHTML = list.map((item, idx) => {
+        const pct = Math.round(item.total / max * 100);
+        return `
+            <li class="ranking-item">
+                <span class="ranking-num">${idx+1}</span>
+                <span class="ranking-name">${labelPrefix} ${item[keyField]}</span>
+                <div class="ranking-bar"><div class="ranking-bar-fill" style="width:${pct}%"></div></div>
+                <span class="ranking-value">${item.total} (待${item.pending_count||0}/改${item.reform_count||0})</span>
+            </li>
+        `;
+    }).join('');
+}
+
+/* ============ Tab切换 ============ */
+document.querySelectorAll('.tab').forEach(t => {
+    t.onclick = () => {
+        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+    };
+});
+
+/* ============ 样品列表 ============ */
+async function loadSamples() {
+    const params = new URLSearchParams();
+    const fields = [
+        ['f_batch', 'test_batch'],
+        ['f_fragrance', 'fragrance_code'],
+        ['f_cup', 'cup_type'],
+        ['f_wick', 'wick_spec'],
+        ['f_person', 'responsible_person'],
+        ['f_status', 'status'],
+    ];
+    fields.forEach(([id, k]) => {
+        const v = document.getElementById(id).value.trim();
+        if (v) params.append(k, v);
+    });
+    const ov = document.getElementById('f_overdue').value;
+    if (ov) params.append('retest_overdue', ov);
+    const wa = document.getElementById('f_wickAlert').value;
+    if (wa) params.append('has_wick_alert', wa);
+    const qs = params.toString();
+    try {
+        const data = await fetchJson('/closure-samples/' + (qs ? '?' + qs : ''));
+        const list = data.results || data;
+        renderSamples(list);
+    } catch (e) { console.error(e); }
+}
+
+function renderSamples(list) {
+    const tbody = document.getElementById('sampleTbody');
+    const empty = document.getElementById('sampleEmpty');
+    if (!list || !list.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = list.map(s => `
+        <tr>
+            <td><span class="link-text" onclick="showDetail(${s.id})">${s.sample_code}</span></td>
+            <td>${s.test_batch}</td>
+            <td>${s.fragrance_code}</td>
+            <td>${s.cup_type}</td>
+            <td>${s.wick_spec}</td>
+            <td>${s.responsible_person}</td>
+            <td>${statusTag(s.status, s.retest_overdue)}</td>
+            <td>${s.abnormal_count > 0 ? `<span class="tag tag-overdue">${s.abnormal_count}次</span>` : '<span class="tag tag-normal">0</span>'}</td>
+            <td>${fmtDate(s.last_test_time)}</td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${s.latest_suggestion || ''}">${s.latest_suggestion || '-'}</td>
+            <td>${s.has_wick_alert ? '<span class="tag tag-wick">⚠ 有关联</span>' : '<span class="tag tag-normal">无</span>'}</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="showHandle(${s.id}, '${s.sample_code}', '${s.status_display}')">处理</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function resetFilter() {
+    ['f_batch','f_fragrance','f_cup','f_wick','f_person','f_status','f_overdue','f_wickAlert']
+        .forEach(id => document.getElementById(id).value = '');
+    loadSamples();
+}
+
+/* ============ 详情模态框 ============ */
+async function showDetail(id) {
+    try {
+        const d = await fetchJson('/closure-samples/' + id + '/');
+        document.getElementById('modalSampleCode').textContent = d.sample_code;
+        const flags = (d.latest_test && d.latest_test.auto_flags) || {};
+        const warnings = (d.latest_test && d.latest_test.auto_warnings) || [];
+        const wickAlertHtml = d.wick_alerts && d.wick_alerts.length
+            ? `<ul class="alert-list">${d.wick_alerts.map(a => `
+                <li class="alert-item">
+                    <strong>${a.test_batch} / ${a.wick_spec}</strong>：
+                    ${a.problem_count}个问题样品，涉及 ${(a.affected_samples||[]).join('、')}
+                    ${a.note ? `<br><span style="opacity:0.8">备注：${a.note}</span>` : ''}
+                </li>`).join('')}</ul>`
+            : '<span style="color:#67c23a;font-size:12px">暂无关联芯线告警</span>';
+        const historyHtml = d.closure_history && d.closure_history.length
+            ? d.closure_history.map(h => `
+                <div class="history-item">
+                    <div class="history-head">
+                        <span>${statusTag(d.status, d.retest_overdue).replace('待复测', h.action_display)}</span>
+                        <span style="color:#909399;font-size:12px">${fmtDate(h.created_at)}${h.handler ? ' · ' + h.handler : ''}</span>
+                    </div>
+                    ${h.remark ? `<div style="color:#606266">${h.remark}</div>` : ''}
+                </div>`).join('')
+            : '<div style="color:#909399;font-size:12px;padding:10px 0">暂无处理记录</div>';
+        document.getElementById('detailBody').innerHTML = `
+            <div class="sub-card">
+                <div class="sub-card-title">基本信息</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 24px">
+                    <div class="info-row"><span class="info-label">测试批次</span><span class="info-value">${d.test_batch}</span></div>
+                    <div class="info-row"><span class="info-label">香型代号</span><span class="info-value">${d.fragrance_code}</span></div>
+                    <div class="info-row"><span class="info-label">杯型</span><span class="info-value">${d.cup_type}</span></div>
+                    <div class="info-row"><span class="info-label">芯线规格</span><span class="info-value">${d.wick_spec}</span></div>
+                    <div class="info-row"><span class="info-label">责任人</span><span class="info-value">${d.responsible_person}</span></div>
+                    <div class="info-row"><span class="info-label">当前状态</span><span class="info-value">${statusTag(d.status, d.retest_overdue)}</span></div>
+                    <div class="info-row"><span class="info-label">创建时间</span><span class="info-value">${fmtDate(d.created_at)}</span></div>
+                    <div class="info-row"><span class="info-label">更新时间</span><span class="info-value">${fmtDate(d.updated_at)}</span></div>
+                    <div class="info-row" style="grid-column:span 2"><span class="info-label">备注</span><span class="info-value">${d.remarks || '-'}</span></div>
+                </div>
+            </div>
+            <div class="sub-card">
+                <div class="sub-card-title">最近一次燃烧测试结果 ${d.latest_test ? `(第${d.latest_test.test_round}轮${d.latest_test.is_retest ? ' 复测' : ''})` : ''}</div>
+                ${d.latest_test ? `
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 24px">
+                        <div class="info-row"><span class="info-label">点燃时间</span><span class="info-value">${fmtDate(d.latest_test.ignite_time)}</span></div>
+                        <div class="info-row"><span class="info-label">熄灭时间</span><span class="info-value">${fmtDate(d.latest_test.extinguish_time)}</span></div>
+                        <div class="info-row"><span class="info-label">燃烧时长</span><span class="info-value">${d.latest_test.burn_duration_minutes != null ? d.latest_test.burn_duration_minutes + ' 分钟' : '-'}</span></div>
+                        <div class="info-row"><span class="info-label">熔池直径</span><span class="info-value">${d.latest_test.melt_pool_diameter != null ? d.latest_test.melt_pool_diameter + ' cm' : '-'}</span></div>
+                        <div class="info-row"><span class="info-label">烟量等级</span><span class="info-value">${d.latest_test.smoke_level_display || '-'}</span></div>
+                        <div class="info-row"><span class="info-label">杯壁温度</span><span class="info-value">${d.latest_test.cup_wall_temp != null ? d.latest_test.cup_wall_temp + ' ℃' : '-'}</span></div>
+                        <div class="info-row"><span class="info-label">测试人</span><span class="info-value">${d.latest_test.tested_by || '-'}</span></div>
+                        <div class="info-row"><span class="info-label">记录时间</span><span class="info-value">${fmtDate(d.latest_test.test_time)}</span></div>
+                    </div>
+                    ${warnings.length ? `<div class="sub-card" style="background:#fef0f0;border-color:#fde2e2;margin-top:12px"><div class="sub-card-title" style="color:#f56c6c">⚠ 自动识别异常标记</div>${warnings.map(w => `<div style="color:#f56c6c;font-size:12px;padding:2px 0">• ${w}</div>`).join('')}</div>` : ''}
+                    <div class="info-row" style="margin-top:12px"><span class="info-label">异常描述</span><span class="info-value">${d.latest_test.abnormal_desc || '<span style="color:#909399">无</span>'}</span></div>
+                    <div class="info-row"><span class="info-label">复测建议</span><span class="info-value">${d.latest_test.retest_suggestion || '<span style="color:#909399">无</span>'}</span></div>
+                ` : '<div style="color:#909399;font-size:13px;padding:10px 0">暂无测试记录</div>'}
+            </div>
+            <div class="sub-card">
+                <div class="sub-card-title">关联芯线风险告警</div>
+                ${wickAlertHtml}
+            </div>
+            <div class="sub-card">
+                <div class="sub-card-title">历史处理记录</div>
+                ${historyHtml}
+            </div>
+            <div style="text-align:right;padding-top:8px">
+                <button class="btn btn-default" onclick="closeModal('detailModal');showHandle(${d.id}, '${d.sample_code}', '${d.status_display}')">记录处理结论</button>
+            </div>
+        `;
+        openModal('detailModal');
+    } catch (e) { alert('加载详情失败：' + e.message); }
+}
+
+/* ============ 处理模态框 ============ */
+let actionOptions = [];
+async function loadActionOptions() {
+    try {
+        actionOptions = await fetchJson('/closure-samples/action-options/');
+        const sel = document.getElementById('h_action');
+        sel.innerHTML = actionOptions.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+    } catch (e) {}
+}
+
+function showHandle(id, code, statusDisp) {
+    document.getElementById('handleSampleId').value = id;
+    document.getElementById('handleSampleCode').textContent = code;
+    document.getElementById('handleStatus').textContent = statusDisp;
+    document.getElementById('h_handler').value = '';
+    document.getElementById('h_remark').value = '';
+    openModal('handleModal');
+}
+
+async function submitHandle() {
+    const id = document.getElementById('handleSampleId').value;
+    const data = {
+        action: document.getElementById('h_action').value,
+        handler: document.getElementById('h_handler').value.trim(),
+        remark: document.getElementById('h_remark').value.trim()
+    };
+    try {
+        const r = await postJson(`/closure-samples/${id}/handle/`, data);
+        alert(`处理成功！新状态：${r.new_status_display}`);
+        closeModal('handleModal');
+        loadSummary();
+        loadSamples();
+    } catch (e) {
+        alert('处理失败：' + e.message);
+    }
+}
+
+/* ============ Modal工具 ============ */
+function openModal(id) { document.getElementById(id).classList.add('show'); document.body.style.overflow='hidden'; }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); document.body.style.overflow=''; }
+document.querySelectorAll('.modal-mask').forEach(m => {
+    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'), document.body.style.overflow=''; });
+});
+
+/* ============ 初始化 ============ */
+loadSummary();
+loadSamples();
+loadActionOptions();
+</script>
+</body>
+</html>

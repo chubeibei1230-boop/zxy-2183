@@ -37,10 +37,6 @@ class BurnTestSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         instance = super().create(validated_data)
-        wax_sample = instance.wax_sample
-        if wax_sample.status in [StatusChoices.PENDING_TEST, StatusChoices.PENDING_RETEST]:
-            wax_sample.status = StatusChoices.IN_TEST
-            wax_sample.save(update_fields=['status', 'updated_at'])
         return instance
 
 
