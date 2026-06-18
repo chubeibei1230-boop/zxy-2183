@@ -104,6 +104,7 @@ class PendingRetestSerializer(serializers.Serializer):
     abnormal_count = serializers.IntegerField()
     last_test_time = serializers.DateTimeField(allow_null=True)
     latest_suggestion = serializers.CharField(allow_null=True)
+    retest_overdue = serializers.BooleanField()
 
 
 class DurationDistributionSerializer(serializers.Serializer):

@@ -237,6 +237,26 @@ class BurnTestViewSet(viewsets.ModelViewSet):
                 'test_id': t.id,
                 'test_time': t.test_time
             })
+        alerted_retest_sample_ids = {
+            a['wax_sample_id'] for a in alerts
+            if a.get('type') == 'retest_action_missing'
+        }
+        overdue_retest_samples = WaxSample.objects.filter(
+            status=StatusChoices.PENDING_RETEST
+        ).prefetch_related('burn_tests')[:100]
+        for sample in overdue_retest_samples:
+            if sample.id in alerted_retest_sample_ids:
+                continue
+            if not sample.has_pending_retest_missing():
+                continue
+            latest = sample.latest_test
+            alerts.append({
+                'type': 'retest_action_missing',
+                'message': f'{sample.sample_code} 待复测超期未执行',
+                'wax_sample_id': sample.id,
+                'test_id': latest.id if latest else None,
+                'test_time': latest.test_time if latest else None
+            })
         wick_alerts = WickProblemAlert.objects.filter(resolved=False).order_by('-last_triggered')[:20]
         for a in wick_alerts:
             samples_str = '、'.join(a.affected_samples) if a.affected_samples else '无'
