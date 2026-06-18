@@ -1,0 +1,369 @@
+from django.db import models
+from django.db.models import Q, Count, Min, Max
+from django.utils import timezone
+from rest_framework import viewsets, status, mixins
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from .models import WaxSample, BurnTest, StatusChoices, SmokeLevelChoices
+from .serializers import (
+    WaxSampleSerializer, WaxSampleDetailSerializer,
+    BurnTestSerializer, BurnTestListSerializer,
+    StatusSerializer, SmokeLevelSerializer,
+    ProblemWickSerializer, PendingRetestSerializer, DurationDistributionSerializer
+)
+from .filters import WaxSampleFilter, BurnTestFilter
+
+
+class WaxSampleViewSet(viewsets.ModelViewSet):
+    queryset = WaxSample.objects.select_related().prefetch_related('burn_tests')
+    filterset_class = WaxSampleFilter
+    search_fields = [
+        'sample_code', 'test_batch', 'fragrance_code',
+        'wick_spec', 'cup_type', 'responsible_person'
+    ]
+    ordering_fields = [
+        'created_at', 'updated_at', 'test_batch',
+        'sample_code', 'status'
+    ]
+    ordering = ['-created_at']
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return WaxSampleDetailSerializer
+        return WaxSampleSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        qs = qs.annotate(
+            _latest_test_time=Max('burn_tests__test_time')
+        )
+        return qs
+
+    @action(detail=True, methods=['post'], url_path='update-status')
+    def update_status(self, request, pk=None):
+        sample = self.get_object()
+        new_status = request.data.get('status')
+        if new_status not in dict(StatusChoices.choices):
+            return Response(
+                {'error': f'无效状态: {new_status}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        old_status = sample.status
+        sample.status = new_status
+        sample.save(update_fields=['status', 'updated_at'])
+        return Response({
+            'id': sample.id,
+            'old_status': old_status,
+            'new_status': new_status,
+            'status_display': sample.get_status_display()
+        })
+
+    @action(detail=False, methods=['get'], url_path='status-options')
+    def status_options(self, request):
+        data = [{'value': v, 'label': l} for v, l in StatusChoices.choices]
+        return Response(StatusSerializer(data, many=True).data)
+
+    @action(detail=False, methods=['get'], url_path='smoke-level-options')
+    def smoke_level_options(self, request):
+        data = [{'value': v, 'label': l} for v, l in SmokeLevelChoices.choices]
+        return Response(SmokeLevelSerializer(data, many=True).data)
+
+    @action(detail=False, methods=['get'], url_path='overview-summary')
+    def overview_summary(self, request):
+        total = WaxSample.objects.count()
+        by_status = WaxSample.objects.values('status').annotate(
+            count=Count('id')
+        ).order_by('status')
+        status_map = {}
+        for item in by_status:
+            status_map[item['status']] = item['count']
+        status_summary = []
+        for v, l in StatusChoices.choices:
+            status_summary.append({
+                'value': v,
+                'label': l,
+                'count': status_map.get(v, 0)
+            })
+        total_tests = BurnTest.objects.count()
+        abnormal_tests = BurnTest.objects.filter(
+            Q(auto_flags__smoke_high=True)
+            | Q(auto_flags__temp_high=True)
+            | Q(abnormal_desc__gt='')
+        ).count()
+        return Response({
+            'total_samples': total,
+            'total_tests': total_tests,
+            'abnormal_tests': abnormal_tests,
+            'status_summary': status_summary
+        })
+
+
+class BurnTestViewSet(viewsets.ModelViewSet):
+    queryset = BurnTest.objects.select_related('wax_sample').all()
+    filterset_class = BurnTestFilter
+    search_fields = [
+        'wax_sample__sample_code', 'wax_sample__test_batch',
+        'wax_sample__fragrance_code', 'wax_sample__wick_spec',
+        'tested_by', 'abnormal_desc', 'retest_suggestion'
+    ]
+    ordering_fields = [
+        'test_time', 'ignite_time', 'smoke_level',
+        'cup_wall_temp', 'test_round'
+    ]
+    ordering = ['-test_time']
+
+    def get_serializer_class(self):
+        if self.action in ['list']:
+            return BurnTestListSerializer
+        return BurnTestSerializer
+
+    def create(self, request, *args, **kwargs):
+        sample_id = request.data.get('wax_sample')
+        if sample_id:
+            try:
+                sample = WaxSample.objects.get(id=sample_id)
+            except WaxSample.DoesNotExist:
+                return Response(
+                    {'error': '蜡样不存在'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            existing_rounds = sample.burn_tests.count()
+            is_retest = request.data.get('is_retest', False)
+            if not request.data.get('test_round'):
+                request.data['test_round'] = existing_rounds + 1
+            if is_retest and sample.status != StatusChoices.PENDING_RETEST:
+                sample.status = StatusChoices.PENDING_RETEST
+                sample.save(update_fields=['status', 'updated_at'])
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        if instance.extinguish_time and instance.enter_next_round is not None:
+            sample = instance.wax_sample
+            if instance.enter_next_round:
+                if instance.is_retest:
+                    sample.status = StatusChoices.VERSION_READY
+                else:
+                    sample.status = StatusChoices.PENDING_RETEST
+            else:
+                if instance.abnormal_desc or instance.auto_flags.get('smoke_high') or instance.auto_flags.get('temp_high'):
+                    sample.status = StatusChoices.NEED_REFORM
+                else:
+                    sample.status = StatusChoices.PENDING_RETEST
+            sample.save(update_fields=['status', 'updated_at'])
+
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='abnormal-alerts')
+    def abnormal_alerts(self, request):
+        alerts = []
+        smoke_high = BurnTest.objects.filter(
+            auto_flags__smoke_high=True
+        ).select_related('wax_sample')[:20]
+        for t in smoke_high:
+            alerts.append({
+                'type': 'smoke_high',
+                'message': f'{t.wax_sample.sample_code} 烟量偏高(等级{t.smoke_level})',
+                'wax_sample_id': t.wax_sample_id,
+                'test_id': t.id,
+                'test_time': t.test_time
+            })
+        temp_high = BurnTest.objects.filter(
+            auto_flags__temp_high=True
+        ).select_related('wax_sample')[:20]
+        for t in temp_high:
+            alerts.append({
+                'type': 'temp_high',
+                'message': f'{t.wax_sample.sample_code} 杯壁温度偏高({t.cup_wall_temp}℃)',
+                'wax_sample_id': t.wax_sample_id,
+                'test_id': t.id,
+                'test_time': t.test_time
+            })
+        retest_missing = BurnTest.objects.filter(
+            auto_flags__retest_data_missing=True
+        ).select_related('wax_sample')[:20]
+        for t in retest_missing:
+            alerts.append({
+                'type': 'retest_data_missing',
+                'message': f'{t.wax_sample.sample_code} 复测数据不完整',
+                'wax_sample_id': t.wax_sample_id,
+                'test_id': t.id,
+                'test_time': t.test_time
+            })
+        suggestion_missing = BurnTest.objects.filter(
+            auto_flags__suggestion_missing=True
+        ).select_related('wax_sample')[:20]
+        for t in suggestion_missing:
+            alerts.append({
+                'type': 'suggestion_missing',
+                'message': f'{t.wax_sample.sample_code} 有异常但缺少复测建议',
+                'wax_sample_id': t.wax_sample_id,
+                'test_id': t.id,
+                'test_time': t.test_time
+            })
+        return Response({'count': len(alerts), 'alerts': alerts})
+
+
+class ProblemWickRankingView(APIView):
+    def get(self, request):
+        test_batch = request.query_params.get('test_batch')
+        limit = int(request.query_params.get('limit', 10))
+
+        base_qs = BurnTest.objects.select_related('wax_sample').filter(
+            Q(auto_flags__smoke_high=True) | Q(auto_flags__temp_high=True)
+        )
+        if test_batch:
+            base_qs = base_qs.filter(wax_sample__test_batch=test_batch)
+
+        wick_stats = base_qs.values('wax_sample__wick_spec').annotate(
+            problem_count=Count('id', distinct=True),
+            min_time=Min('test_time'),
+            max_time=Max('test_time')
+        ).order_by('-problem_count')[:limit]
+
+        all_wick_specs = list(WaxSample.objects.values_list('wick_spec', flat=True).distinct())
+        result = []
+        for stat in wick_stats:
+            wick_spec = stat['wax_sample__wick_spec']
+            wick_samples_query = WaxSample.objects.filter(wick_spec=wick_spec)
+            if test_batch:
+                wick_samples_query = wick_samples_query.filter(test_batch=test_batch)
+            total_samples = wick_samples_query.count()
+
+            problem_tests = base_qs.filter(wax_sample__wick_spec=wick_spec)
+            affected_ids = list(problem_tests.values_list('wax_sample_id', flat=True).distinct())
+            affected_samples = WaxSample.objects.filter(id__in=affected_ids).values(
+                'id', 'sample_code', 'test_batch', 'fragrance_code', 'cup_type'
+            )
+
+            problem_rate = round(stat['problem_count'] / total_samples * 100, 1) if total_samples > 0 else 0
+
+            result.append({
+                'wick_spec': wick_spec,
+                'problem_count': stat['problem_count'],
+                'total_samples': total_samples,
+                'affected_samples': list(affected_samples),
+                'problem_rate': problem_rate
+            })
+        serializer = ProblemWickSerializer(result, many=True)
+        return Response(serializer.data)
+
+
+class PendingRetestView(APIView):
+    def get(self, request):
+        status_filter = request.query_params.get('status')
+        fragrance_code = request.query_params.get('fragrance_code')
+        wick_spec = request.query_params.get('wick_spec')
+
+        samples = WaxSample.objects.filter(
+            Q(status=StatusChoices.PENDING_RETEST) |
+            Q(status=StatusChoices.NEED_REFORM)
+        ).select_related().prefetch_related('burn_tests')
+
+        if status_filter:
+            samples = samples.filter(status=status_filter)
+        if fragrance_code:
+            samples = samples.filter(fragrance_code__icontains=fragrance_code)
+        if wick_spec:
+            samples = samples.filter(wick_spec__icontains=wick_spec)
+
+        result = []
+        for s in samples:
+            abnormal_tests = s.burn_tests.filter(
+                Q(auto_flags__smoke_high=True) |
+                Q(auto_flags__temp_high=True) |
+                Q(abnormal_desc__gt='')
+            )
+            abnormal_count = abnormal_tests.count()
+            latest = s.burn_tests.order_by('-test_time').first()
+            last_test_time = latest.test_time if latest else None
+            latest_suggestion = latest.retest_suggestion if latest and latest.retest_suggestion else None
+
+            result.append({
+                'id': s.id,
+                'sample_code': s.sample_code,
+                'cup_type': s.cup_type,
+                'fragrance_code': s.fragrance_code,
+                'wick_spec': s.wick_spec,
+                'test_batch': s.test_batch,
+                'responsible_person': s.responsible_person,
+                'status_display': s.get_status_display(),
+                'abnormal_count': abnormal_count,
+                'last_test_time': last_test_time,
+                'latest_suggestion': latest_suggestion
+            })
+
+        serializer = PendingRetestSerializer(result, many=True)
+        return Response({
+            'count': len(result),
+            'results': serializer.data
+        })
+
+
+class TestDurationDistributionView(APIView):
+    def get(self, request):
+        ranges = [
+            (0, 30, '0-30分钟'),
+            (30, 60, '30-60分钟'),
+            (60, 120, '1-2小时'),
+            (120, 180, '2-3小时'),
+            (180, 240, '3-4小时'),
+            (240, None, '4小时以上'),
+        ]
+        tests_with_duration = BurnTest.objects.filter(
+            ignite_time__isnull=False,
+            extinguish_time__isnull=False
+        )
+        durations = []
+        for t in tests_with_duration:
+            d = (t.extinguish_time - t.ignite_time).total_seconds() / 60
+            durations.append(d)
+
+        total = len(durations)
+        result = []
+        for r_min, r_max, label in ranges:
+            if r_max is None:
+                count = sum(1 for d in durations if d >= r_min)
+            else:
+                count = sum(1 for d in durations if r_min <= d < r_max)
+            percentage = round(count / total * 100, 1) if total > 0 else 0
+            result.append({
+                'range_label': label,
+                'range_min': r_min,
+                'range_max': r_max,
+                'count': count,
+                'percentage': percentage
+            })
+
+        serializer = DurationDistributionSerializer(result, many=True)
+        stats = {}
+        if durations:
+            stats = {
+                'total': total,
+                'avg_minutes': round(sum(durations) / total, 1),
+                'min_minutes': round(min(durations), 1),
+                'max_minutes': round(max(durations), 1),
+            }
+        return Response({
+            'statistics': stats,
+            'distribution': serializer.data
+        })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    return Response({
+        'status': 'ok',
+        'service': '香氛蜡样研发管理系统',
+        'version': '1.0.0',
+        'timestamp': timezone.now()
+    })
