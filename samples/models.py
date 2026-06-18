@@ -16,6 +16,12 @@ class StatusChoices(models.TextChoices):
     VERSION_READY = 'version_ready', '可归入版本库'
 
 
+class ClosureActionChoices(models.TextChoices):
+    CONTINUE_RETEST = 'continue_retest', '继续复测'
+    TRANSFER_REFORM = 'transfer_reform', '转入改配'
+    CONFIRM_VERSION = 'confirm_version', '确认可归入版本库'
+
+
 class SmokeLevelChoices(models.IntegerChoices):
     LEVEL_1 = 1, '1级-无烟'
     LEVEL_2 = 2, '2级-轻微'
@@ -238,3 +244,50 @@ class WickProblemAlert(models.Model):
 
     def __str__(self):
         return f'[{self.test_batch}] {self.wick_spec}: {self.problem_count}个问题'
+
+
+class RetestClosure(models.Model):
+    wax_sample = models.ForeignKey(
+        WaxSample,
+        on_delete=models.CASCADE,
+        related_name='retest_closures',
+        verbose_name='蜡样'
+    )
+    burn_test = models.ForeignKey(
+        BurnTest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='closures',
+        verbose_name='关联测试记录'
+    )
+    action = models.CharField(
+        '处理结论',
+        max_length=30,
+        choices=ClosureActionChoices.choices
+    )
+    handler = models.CharField('处理人', max_length=50, blank=True, default='')
+    remark = models.TextField('处理备注', blank=True, default='')
+    created_at = models.DateTimeField('处理时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '复测闭环处理记录'
+        verbose_name_plural = '复测闭环处理记录'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.wax_sample} - {self.get_action_display()}'
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self._update_sample_status()
+
+    def _update_sample_status(self):
+        sample = self.wax_sample
+        if self.action == ClosureActionChoices.CONTINUE_RETEST:
+            sample.status = StatusChoices.PENDING_RETEST
+        elif self.action == ClosureActionChoices.TRANSFER_REFORM:
+            sample.status = StatusChoices.NEED_REFORM
+        elif self.action == ClosureActionChoices.CONFIRM_VERSION:
+            sample.status = StatusChoices.VERSION_READY
+        sample.save(update_fields=['status', 'updated_at'])

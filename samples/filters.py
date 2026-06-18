@@ -1,6 +1,6 @@
 from django.db.models import Q
 from django_filters import rest_framework as filters
-from .models import WaxSample, BurnTest, StatusChoices, SmokeLevelChoices
+from .models import WaxSample, BurnTest, RetestClosure, WickProblemAlert, StatusChoices, SmokeLevelChoices, ClosureActionChoices
 
 
 class WaxSampleFilter(filters.FilterSet):
@@ -88,3 +88,72 @@ class BurnTestFilter(filters.FilterSet):
         if value:
             return queryset.filter(auto_flags__smoke_high=True)
         return queryset
+
+
+class ClosureSampleFilter(filters.FilterSet):
+    test_batch = filters.CharFilter(field_name='test_batch', lookup_expr='icontains')
+    fragrance_code = filters.CharFilter(field_name='fragrance_code', lookup_expr='icontains')
+    cup_type = filters.CharFilter(field_name='cup_type', lookup_expr='icontains')
+    wick_spec = filters.CharFilter(field_name='wick_spec', lookup_expr='icontains')
+    responsible_person = filters.CharFilter(field_name='responsible_person', lookup_expr='icontains')
+    status = filters.ChoiceFilter(choices=StatusChoices.choices)
+    retest_overdue = filters.BooleanFilter(method='filter_retest_overdue')
+    has_wick_alert = filters.BooleanFilter(method='filter_has_wick_alert')
+    has_abnormal = filters.BooleanFilter(method='filter_has_abnormal')
+
+    class Meta:
+        model = WaxSample
+        fields = []
+
+    def filter_retest_overdue(self, queryset, name, value):
+        from django.utils import timezone
+        from datetime import timedelta
+        from .models import RETARGET_MISSING_DAYS
+        ids = []
+        for s in queryset.filter(status=StatusChoices.PENDING_RETEST).prefetch_related('burn_tests'):
+            latest = s.burn_tests.order_by('-test_time').first()
+            is_overdue = False
+            if not latest:
+                is_overdue = True
+            elif not latest.is_retest:
+                cutoff = latest.test_time + timedelta(days=RETARGET_MISSING_DAYS)
+                is_overdue = timezone.now() > cutoff
+            if is_overdue == value:
+                ids.append(s.id)
+        return queryset.filter(id__in=ids)
+
+    def filter_has_wick_alert(self, queryset, name, value):
+        if value:
+            return queryset.filter(
+                Q(test_batch__in=list(
+                    WickProblemAlert.objects.filter(resolved=False).values_list('test_batch', flat=True)
+                )) & Q(wick_spec__in=list(
+                    WickProblemAlert.objects.filter(resolved=False).values_list('wick_spec', flat=True)
+                ))
+            ).distinct()
+        return queryset
+
+    def filter_has_abnormal(self, queryset, name, value):
+        if value:
+            return queryset.filter(
+                burn_tests__isnull=False
+            ).filter(
+                Q(burn_tests__abnormal_desc__gt='')
+                | Q(burn_tests__auto_flags__smoke_high=True)
+                | Q(burn_tests__auto_flags__temp_high=True)
+            ).distinct()
+        return queryset
+
+
+class RetestClosureFilter(filters.FilterSet):
+    test_batch = filters.CharFilter(field_name='wax_sample__test_batch', lookup_expr='icontains')
+    sample_code = filters.CharFilter(field_name='wax_sample__sample_code', lookup_expr='icontains')
+    wick_spec = filters.CharFilter(field_name='wax_sample__wick_spec', lookup_expr='icontains')
+    action = filters.ChoiceFilter(choices=ClosureActionChoices.choices)
+    handler = filters.CharFilter(field_name='handler', lookup_expr='icontains')
+    created_from = filters.DateFilter(field_name='created_at', lookup_expr='date__gte')
+    created_to = filters.DateFilter(field_name='created_at', lookup_expr='date__lte')
+
+    class Meta:
+        model = RetestClosure
+        fields = ['wax_sample']

@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     WaxSampleViewSet, BurnTestViewSet, WickProblemAlertViewSet,
     ProblemWickRankingView, PendingRetestView, TestDurationDistributionView,
+    RetestClosureViewSet, ClosureSampleViewSet, ClosureSummaryView,
     health_check
 )
 
@@ -11,6 +12,8 @@ router = DefaultRouter()
 router.register(r'samples', WaxSampleViewSet, basename='wax-sample')
 router.register(r'tests', BurnTestViewSet, basename='burn-test')
 router.register(r'wick-alerts', WickProblemAlertViewSet, basename='wick-alert')
+router.register(r'retest-closures', RetestClosureViewSet, basename='retest-closure')
+router.register(r'closure-samples', ClosureSampleViewSet, basename='closure-sample')
 
 urlpatterns = [
     path('health/', health_check, name='health-check'),
@@ -18,4 +21,5 @@ urlpatterns = [
     path('statistics/problem-wicks/', ProblemWickRankingView.as_view(), name='problem-wick-ranking'),
     path('statistics/pending-retests/', PendingRetestView.as_view(), name='pending-retests'),
     path('statistics/duration-distribution/', TestDurationDistributionView.as_view(), name='duration-distribution'),
+    path('closure/summary/', ClosureSummaryView.as_view(), name='closure-summary'),
 ]

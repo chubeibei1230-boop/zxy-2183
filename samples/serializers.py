@@ -1,5 +1,8 @@
 from rest_framework import serializers
-from .models import WaxSample, BurnTest, WickProblemAlert, StatusChoices, SmokeLevelChoices
+from .models import (
+    WaxSample, BurnTest, WickProblemAlert, RetestClosure,
+    StatusChoices, SmokeLevelChoices, ClosureActionChoices
+)
 
 
 class StatusSerializer(serializers.Serializer):
@@ -120,3 +123,107 @@ class WickProblemAlertSerializer(serializers.ModelSerializer):
         model = WickProblemAlert
         fields = '__all__'
         read_only_fields = ('created_at', 'last_triggered')
+
+
+class ClosureActionSerializer(serializers.Serializer):
+    value = serializers.CharField()
+    label = serializers.CharField()
+
+
+class RetestClosureSerializer(serializers.ModelSerializer):
+    action_display = serializers.CharField(source='get_action_display', read_only=True)
+    wax_sample_display = serializers.CharField(source='wax_sample.__str__', read_only=True)
+
+    class Meta:
+        model = RetestClosure
+        fields = '__all__'
+        read_only_fields = ('created_at',)
+
+
+class ClosureLatestTestSerializer(serializers.ModelSerializer):
+    smoke_level_display = serializers.CharField(source='get_smoke_level_display', read_only=True)
+    burn_duration_minutes = serializers.FloatField(read_only=True)
+    auto_warnings = serializers.ListField(source='analyze_flags.warnings', read_only=True)
+
+    class Meta:
+        model = BurnTest
+        fields = [
+            'id', 'test_round', 'is_retest', 'ignite_time', 'extinguish_time',
+            'melt_pool_diameter', 'smoke_level', 'smoke_level_display',
+            'cup_wall_temp', 'burn_duration_minutes', 'abnormal_desc',
+            'retest_suggestion', 'enter_next_round', 'test_time', 'tested_by',
+            'auto_flags', 'auto_warnings'
+        ]
+
+
+class ClosureWickAlertSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WickProblemAlert
+        fields = [
+            'id', 'wick_spec', 'test_batch', 'problem_count',
+            'affected_samples', 'last_triggered', 'resolved', 'note'
+        ]
+
+
+class ClosureSampleListSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    sample_code = serializers.CharField()
+    test_batch = serializers.CharField()
+    fragrance_code = serializers.CharField()
+    cup_type = serializers.CharField()
+    wick_spec = serializers.CharField()
+    responsible_person = serializers.CharField()
+    status = serializers.CharField()
+    status_display = serializers.CharField()
+    abnormal_count = serializers.IntegerField()
+    last_test_time = serializers.DateTimeField(allow_null=True)
+    latest_suggestion = serializers.CharField(allow_null=True)
+    retest_overdue = serializers.BooleanField()
+    has_wick_alert = serializers.BooleanField()
+    retest_count = serializers.IntegerField()
+
+
+class ClosureSampleDetailSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    sample_code = serializers.CharField()
+    test_batch = serializers.CharField()
+    fragrance_code = serializers.CharField()
+    cup_type = serializers.CharField()
+    wick_spec = serializers.CharField()
+    responsible_person = serializers.CharField()
+    status = serializers.CharField()
+    status_display = serializers.CharField()
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+    remarks = serializers.CharField()
+    latest_test = ClosureLatestTestSerializer(allow_null=True)
+    wick_alerts = ClosureWickAlertSerializer(many=True)
+    closure_history = RetestClosureSerializer(many=True)
+    retest_overdue = serializers.BooleanField()
+    abnormal_count = serializers.IntegerField()
+
+
+class AbnormalTrendItemSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    abnormal_count = serializers.IntegerField()
+    smoke_high_count = serializers.IntegerField()
+    temp_high_count = serializers.IntegerField()
+    retest_count = serializers.IntegerField()
+
+
+class ClosureSummarySerializer(serializers.Serializer):
+    pending_retest_count = serializers.IntegerField()
+    overdue_retest_count = serializers.IntegerField()
+    need_reform_count = serializers.IntegerField()
+    unresolved_wick_alerts = serializers.IntegerField()
+    abnormal_alerts_count = serializers.IntegerField()
+    recent_abnormal_trend = AbnormalTrendItemSerializer(many=True)
+    by_batch_top5 = serializers.ListField(child=serializers.DictField())
+    by_wick_top5 = serializers.ListField(child=serializers.DictField())
+
+
+class ClosureHandleSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=ClosureActionChoices.choices)
+    handler = serializers.CharField(required=False, allow_blank=True, default='')
+    remark = serializers.CharField(required=False, allow_blank=True, default='')
+    burn_test_id = serializers.IntegerField(required=False, allow_null=True, default=None)

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import WaxSample, BurnTest, WickProblemAlert
+from .models import WaxSample, BurnTest, WickProblemAlert, RetestClosure
 
 
 class BurnTestInline(admin.TabularInline):
@@ -13,6 +13,13 @@ class BurnTestInline(admin.TabularInline):
     readonly_fields = ['auto_flags', 'test_time']
 
 
+class RetestClosureInline(admin.TabularInline):
+    model = RetestClosure
+    extra = 0
+    fields = ['action', 'handler', 'remark', 'created_at']
+    readonly_fields = ['created_at']
+
+
 @admin.register(WaxSample)
 class WaxSampleAdmin(admin.ModelAdmin):
     list_display = [
@@ -24,7 +31,7 @@ class WaxSampleAdmin(admin.ModelAdmin):
         'sample_code', 'test_batch', 'fragrance_code',
         'wick_spec', 'responsible_person'
     ]
-    inlines = [BurnTestInline]
+    inlines = [BurnTestInline, RetestClosureInline]
     readonly_fields = ['created_at', 'updated_at']
 
 
@@ -52,3 +59,16 @@ class WickProblemAlertAdmin(admin.ModelAdmin):
     list_filter = ['resolved', 'test_batch', 'wick_spec']
     search_fields = ['wick_spec', 'test_batch', 'note']
     readonly_fields = ['created_at', 'last_triggered']
+
+
+@admin.register(RetestClosure)
+class RetestClosureAdmin(admin.ModelAdmin):
+    list_display = [
+        'wax_sample', 'action', 'handler', 'burn_test', 'created_at'
+    ]
+    list_filter = ['action', 'created_at']
+    search_fields = [
+        'wax_sample__sample_code', 'wax_sample__test_batch',
+        'handler', 'remark'
+    ]
+    readonly_fields = ['created_at']

@@ -8,17 +8,21 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import (
-    WaxSample, BurnTest, WickProblemAlert,
-    StatusChoices, SmokeLevelChoices, WICK_PROBLEM_THRESHOLD
+    WaxSample, BurnTest, WickProblemAlert, RetestClosure,
+    StatusChoices, SmokeLevelChoices, ClosureActionChoices,
+    WICK_PROBLEM_THRESHOLD, RETARGET_MISSING_DAYS
 )
 from .serializers import (
     WaxSampleSerializer, WaxSampleDetailSerializer,
     BurnTestSerializer, BurnTestListSerializer,
     StatusSerializer, SmokeLevelSerializer,
     ProblemWickSerializer, PendingRetestSerializer,
-    DurationDistributionSerializer, WickProblemAlertSerializer
+    DurationDistributionSerializer, WickProblemAlertSerializer,
+    RetestClosureSerializer, ClosureActionSerializer,
+    ClosureSampleListSerializer, ClosureSampleDetailSerializer,
+    ClosureSummarySerializer, ClosureHandleSerializer
 )
-from .filters import WaxSampleFilter, BurnTestFilter
+from .filters import WaxSampleFilter, BurnTestFilter, ClosureSampleFilter, RetestClosureFilter
 
 
 class WaxSampleViewSet(viewsets.ModelViewSet):
@@ -454,3 +458,240 @@ def health_check(request):
         'version': '1.1.0',
         'timestamp': timezone.now()
     })
+
+
+class RetestClosureViewSet(viewsets.ModelViewSet):
+    queryset = RetestClosure.objects.select_related('wax_sample', 'burn_test').all()
+    serializer_class = RetestClosureSerializer
+    filterset_class = RetestClosureFilter
+    search_fields = [
+        'wax_sample__sample_code', 'wax_sample__test_batch',
+        'wax_sample__wick_spec', 'handler', 'remark'
+    ]
+    ordering_fields = ['created_at', 'action']
+    ordering = ['-created_at']
+
+
+class ClosureSampleViewSet(viewsets.ReadOnlyModelViewSet):
+    filterset_class = ClosureSampleFilter
+    search_fields = [
+        'sample_code', 'test_batch', 'fragrance_code',
+        'wick_spec', 'cup_type', 'responsible_person'
+    ]
+    ordering_fields = [
+        'created_at', 'updated_at', 'test_batch',
+        'sample_code', 'status'
+    ]
+    ordering = ['-updated_at']
+
+    def get_queryset(self):
+        return WaxSample.objects.filter(
+            Q(status=StatusChoices.PENDING_RETEST)
+            | Q(status=StatusChoices.NEED_REFORM)
+        ).select_related().prefetch_related(
+            'burn_tests', 'retest_closures'
+        )
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return ClosureSampleDetailSerializer
+        return ClosureSampleListSerializer
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            results = self._build_list_data(page)
+            serializer = self.get_serializer(results, many=True)
+            return self.get_paginated_response(serializer.data)
+        results = self._build_list_data(queryset)
+        serializer = self.get_serializer(results, many=True)
+        return Response({
+            'count': len(results),
+            'results': serializer.data
+        })
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        data = self._build_detail_data(instance)
+        serializer = self.get_serializer(data)
+        return Response(serializer.data)
+
+    def _build_list_data(self, samples):
+        unresolved_alerts = WickProblemAlert.objects.filter(resolved=False)
+        alert_key_set = set()
+        for a in unresolved_alerts:
+            alert_key_set.add((a.test_batch, a.wick_spec))
+        results = []
+        for s in samples:
+            abnormal_tests = s.burn_tests.filter(
+                Q(auto_flags__smoke_high=True)
+                | Q(auto_flags__temp_high=True)
+                | Q(abnormal_desc__gt='')
+            )
+            abnormal_count = abnormal_tests.count()
+            latest = s.burn_tests.order_by('-test_time').first()
+            last_test_time = latest.test_time if latest else None
+            latest_suggestion = latest.retest_suggestion if latest and latest.retest_suggestion else None
+            overdue = s.has_pending_retest_missing()
+            has_wick_alert = (s.test_batch, s.wick_spec) in alert_key_set
+            results.append({
+                'id': s.id,
+                'sample_code': s.sample_code,
+                'cup_type': s.cup_type,
+                'fragrance_code': s.fragrance_code,
+                'wick_spec': s.wick_spec,
+                'test_batch': s.test_batch,
+                'responsible_person': s.responsible_person,
+                'status': s.status,
+                'status_display': s.get_status_display(),
+                'abnormal_count': abnormal_count,
+                'last_test_time': last_test_time,
+                'latest_suggestion': latest_suggestion,
+                'retest_overdue': overdue,
+                'has_wick_alert': has_wick_alert,
+                'retest_count': s.retest_count,
+            })
+        return results
+
+    def _build_detail_data(self, s):
+        abnormal_tests = s.burn_tests.filter(
+            Q(auto_flags__smoke_high=True)
+            | Q(auto_flags__temp_high=True)
+            | Q(abnormal_desc__gt='')
+        )
+        abnormal_count = abnormal_tests.count()
+        latest = s.burn_tests.order_by('-test_time').first()
+        overdue = s.has_pending_retest_missing()
+        wick_alerts = WickProblemAlert.objects.filter(
+            test_batch=s.test_batch,
+            wick_spec=s.wick_spec
+        ).order_by('-last_triggered')
+        closure_history = s.retest_closures.order_by('-created_at')
+        return {
+            'id': s.id,
+            'sample_code': s.sample_code,
+            'test_batch': s.test_batch,
+            'fragrance_code': s.fragrance_code,
+            'cup_type': s.cup_type,
+            'wick_spec': s.wick_spec,
+            'responsible_person': s.responsible_person,
+            'status': s.status,
+            'status_display': s.get_status_display(),
+            'created_at': s.created_at,
+            'updated_at': s.updated_at,
+            'remarks': s.remarks,
+            'latest_test': latest,
+            'wick_alerts': wick_alerts,
+            'closure_history': closure_history,
+            'retest_overdue': overdue,
+            'abnormal_count': abnormal_count,
+        }
+
+    @action(detail=True, methods=['post'], url_path='handle')
+    def handle_sample(self, request, pk=None):
+        sample = self.get_object()
+        serializer = ClosureHandleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        burn_test = None
+        if data.get('burn_test_id'):
+            try:
+                burn_test = BurnTest.objects.get(id=data['burn_test_id'], wax_sample=sample)
+            except BurnTest.DoesNotExist:
+                return Response(
+                    {'error': '关联的测试记录不存在或不属于该蜡样'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        closure = RetestClosure.objects.create(
+            wax_sample=sample,
+            burn_test=burn_test,
+            action=data['action'],
+            handler=data.get('handler', ''),
+            remark=data.get('remark', '')
+        )
+        return Response({
+            'closure_id': closure.id,
+            'new_status': sample.status,
+            'new_status_display': sample.get_status_display(),
+            'action': closure.action,
+            'action_display': closure.get_action_display()
+        })
+
+    @action(detail=False, methods=['get'], url_path='action-options')
+    def action_options(self, request):
+        data = [{'value': v, 'label': l} for v, l in ClosureActionChoices.choices]
+        return Response(ClosureActionSerializer(data, many=True).data)
+
+
+class ClosureSummaryView(APIView):
+    def get(self, request):
+        pending_retest_qs = WaxSample.objects.filter(status=StatusChoices.PENDING_RETEST)
+        pending_retest_count = pending_retest_qs.count()
+        overdue_retest_count = 0
+        for s in pending_retest_qs.prefetch_related('burn_tests'):
+            if s.has_pending_retest_missing():
+                overdue_retest_count += 1
+        need_reform_count = WaxSample.objects.filter(status=StatusChoices.NEED_REFORM).count()
+        unresolved_wick_alerts = WickProblemAlert.objects.filter(resolved=False).count()
+        abnormal_alerts_count = BurnTest.objects.filter(
+            Q(auto_flags__smoke_high=True)
+            | Q(auto_flags__temp_high=True)
+            | Q(abnormal_desc__gt='')
+        ).count()
+
+        from datetime import timedelta
+        today = timezone.now().date()
+        trend_days = int(request.query_params.get('trend_days', 7))
+        trend_list = []
+        for i in range(trend_days - 1, -1, -1):
+            d = today - timedelta(days=i)
+            day_tests = BurnTest.objects.filter(test_time__date=d)
+            abnormal = day_tests.filter(
+                Q(auto_flags__smoke_high=True)
+                | Q(auto_flags__temp_high=True)
+                | Q(abnormal_desc__gt='')
+            ).count()
+            smoke_high = day_tests.filter(auto_flags__smoke_high=True).count()
+            temp_high = day_tests.filter(auto_flags__temp_high=True).count()
+            retest = day_tests.filter(is_retest=True).count()
+            trend_list.append({
+                'date': d,
+                'abnormal_count': abnormal,
+                'smoke_high_count': smoke_high,
+                'temp_high_count': temp_high,
+                'retest_count': retest,
+            })
+
+        by_batch = WaxSample.objects.filter(
+            Q(status=StatusChoices.PENDING_RETEST)
+            | Q(status=StatusChoices.NEED_REFORM)
+        ).values('test_batch').annotate(
+            pending_count=Count('id', filter=Q(status=StatusChoices.PENDING_RETEST)),
+            reform_count=Count('id', filter=Q(status=StatusChoices.NEED_REFORM)),
+            total=Count('id')
+        ).order_by('-total')[:5]
+        by_batch_top5 = list(by_batch)
+
+        by_wick = WaxSample.objects.filter(
+            Q(status=StatusChoices.PENDING_RETEST)
+            | Q(status=StatusChoices.NEED_REFORM)
+        ).values('wick_spec').annotate(
+            pending_count=Count('id', filter=Q(status=StatusChoices.PENDING_RETEST)),
+            reform_count=Count('id', filter=Q(status=StatusChoices.NEED_REFORM)),
+            total=Count('id')
+        ).order_by('-total')[:5]
+        by_wick_top5 = list(by_wick)
+
+        result = {
+            'pending_retest_count': pending_retest_count,
+            'overdue_retest_count': overdue_retest_count,
+            'need_reform_count': need_reform_count,
+            'unresolved_wick_alerts': unresolved_wick_alerts,
+            'abnormal_alerts_count': abnormal_alerts_count,
+            'recent_abnormal_trend': trend_list,
+            'by_batch_top5': by_batch_top5,
+            'by_wick_top5': by_wick_top5,
+        }
+        serializer = ClosureSummarySerializer(result)
+        return Response(serializer.data)
