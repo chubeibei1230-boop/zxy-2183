@@ -35,9 +35,17 @@ from .serializers import (
     RetestPlanSerializer, RetestPlanListSerializer, RetestPlanDetailSerializer,
     RetestPlanExecutionSerializer, RetestPlanExecutionListSerializer,
     RetestPlanExecuteSerializer, RetestPlanCancelSerializer,
-    PlanSummarySerializer
+    PlanSummarySerializer,
+    ReviewReportSummarySerializer, ReviewAbnormalSampleSerializer,
+    ReviewWickRankingSerializer, ReviewUnclosedItemSerializer,
+    ReviewClosedRecordSerializer, ReviewSampleDetailSerializer,
+    AbnormalTypeSerializer, ProcessingStatusSerializer
 )
-from .filters import WaxSampleFilter, BurnTestFilter, ClosureSampleFilter, RetestClosureFilter, RetestPlanFilter, RetestPlanExecutionFilter
+from .filters import (
+    WaxSampleFilter, BurnTestFilter, ClosureSampleFilter,
+    RetestClosureFilter, RetestPlanFilter, RetestPlanExecutionFilter,
+    ReviewReportFilter
+)
 
 
 class WaxSampleViewSet(viewsets.ModelViewSet):
@@ -917,3 +925,562 @@ class RetestPlanExecutionViewSet(viewsets.ReadOnlyModelViewSet):
 @permission_classes([AllowAny])
 def retest_plan_dashboard(request):
     return render(request, 'samples/retest_plan_dashboard.html')
+
+
+@permission_classes([AllowAny])
+def review_report_dashboard(request):
+    return render(request, 'samples/review_report_dashboard.html')
+
+
+class ReviewReportMixin:
+    def get_filtered_samples(self, request):
+        queryset = WaxSample.objects.select_related().prefetch_related(
+            'burn_tests', 'retest_closures', 'retest_plans'
+        )
+        filterset = ReviewReportFilter(request.query_params, queryset=queryset)
+        return filterset.qs
+
+    def get_filtered_tests(self, samples_qs):
+        return BurnTest.objects.filter(wax_sample__in=samples_qs)
+
+    def _is_sample_closed(self, sample):
+        latest_closure = sample.retest_closures.order_by('-created_at').first()
+        if latest_closure and latest_closure.action in [
+            ClosureActionChoices.CONFIRM_VERSION,
+            ClosureActionChoices.TRANSFER_REFORM
+        ]:
+            return True
+        return False
+
+    def _get_sample_abnormal_types(self, sample):
+        types = set()
+        for t in sample.burn_tests.all():
+            flags = t.analyze_flags()
+            if flags.get('smoke_high'):
+                types.add('烟量偏高')
+            if flags.get('temp_high'):
+                types.add('杯壁温度偏高')
+            if flags.get('temp_low'):
+                types.add('杯壁温度偏低')
+            if t.abnormal_desc:
+                types.add('人工异常描述')
+        return list(types)
+
+    def _count_sample_abnormal(self, sample):
+        count = 0
+        for t in sample.burn_tests.all():
+            flags = t.analyze_flags()
+            has_abnormal = (
+                flags.get('smoke_high')
+                or flags.get('temp_high')
+                or flags.get('temp_low')
+                or t.abnormal_desc
+            )
+            if has_abnormal:
+                count += 1
+        return count
+
+
+class ReviewReportSummaryView(APIView, ReviewReportMixin):
+    def get(self, request):
+        samples_qs = self.get_filtered_samples(request)
+        tests_qs = self.get_filtered_tests(samples_qs)
+
+        total_samples = samples_qs.count()
+        total_tests = tests_qs.count()
+
+        smoke_high_count = tests_qs.filter(auto_flags__smoke_high=True).count()
+        temp_high_count = tests_qs.filter(auto_flags__temp_high=True).count()
+        temp_low_count = tests_qs.filter(auto_flags__temp_low=True).count()
+        abnormal_desc_count = tests_qs.filter(abnormal_desc__gt='').count()
+
+        abnormal_sample_ids = set()
+        abnormal_test_count = 0
+        for t in tests_qs:
+            flags = t.analyze_flags()
+            has_abnormal = (
+                flags.get('smoke_high')
+                or flags.get('temp_high')
+                or flags.get('temp_low')
+                or t.abnormal_desc
+            )
+            if has_abnormal:
+                abnormal_test_count += 1
+                abnormal_sample_ids.add(t.wax_sample_id)
+
+        abnormal_sample_count = len(abnormal_sample_ids)
+        abnormal_rate = round(abnormal_sample_count / total_samples * 100, 1) if total_samples > 0 else 0
+
+        by_status = []
+        for v, l in StatusChoices.choices:
+            cnt = samples_qs.filter(status=v).count()
+            by_status.append({'value': v, 'label': l, 'count': cnt})
+
+        pending_retest_count = samples_qs.filter(status=StatusChoices.PENDING_RETEST).count()
+        need_reform_count = samples_qs.filter(status=StatusChoices.NEED_REFORM).count()
+        version_ready_count = samples_qs.filter(status=StatusChoices.VERSION_READY).count()
+
+        test_batch_set = set(samples_qs.values_list('test_batch', flat=True).distinct())
+        wick_spec_set = set(samples_qs.values_list('wick_spec', flat=True).distinct())
+        unresolved_wick_alerts = WickProblemAlert.objects.filter(
+            resolved=False,
+            test_batch__in=test_batch_set,
+            wick_spec__in=wick_spec_set
+        ).count()
+
+        closed_count = 0
+        unclosed_count = 0
+        for s in samples_qs.prefetch_related('retest_closures', 'burn_tests'):
+            has_abnormal = False
+            for t in s.burn_tests.all():
+                flags = t.analyze_flags()
+                if (flags.get('smoke_high') or flags.get('temp_high')
+                        or flags.get('temp_low') or t.abnormal_desc):
+                    has_abnormal = True
+                    break
+            if not has_abnormal:
+                continue
+            if self._is_sample_closed(s):
+                closed_count += 1
+            else:
+                unclosed_count += 1
+
+        total_abnormal = closed_count + unclosed_count
+        closure_rate = round(closed_count / total_abnormal * 100, 1) if total_abnormal > 0 else 0
+
+        by_abnormal_type = [
+            {'value': 'smoke_high', 'label': '烟量偏高', 'count': smoke_high_count},
+            {'value': 'temp_high', 'label': '杯壁温度偏高', 'count': temp_high_count},
+            {'value': 'temp_low', 'label': '杯壁温度偏低', 'count': temp_low_count},
+            {'value': 'abnormal_desc', 'label': '人工异常描述', 'count': abnormal_desc_count},
+        ]
+
+        by_fragrance_qs = samples_qs.values('fragrance_code').annotate(
+            count=Count('id')
+        ).order_by('-count')[:10]
+        by_fragrance = [
+            {'fragrance_code': item['fragrance_code'], 'count': item['count']}
+            for item in by_fragrance_qs
+        ]
+
+        by_cup_type_qs = samples_qs.values('cup_type').annotate(
+            count=Count('id')
+        ).order_by('-count')[:10]
+        by_cup_type = [
+            {'cup_type': item['cup_type'], 'count': item['count']}
+            for item in by_cup_type_qs
+        ]
+
+        by_responsible_qs = samples_qs.values('responsible_person').annotate(
+            count=Count('id')
+        ).order_by('-count')[:10]
+        by_responsible = [
+            {'responsible_person': item['responsible_person'], 'count': item['count']}
+            for item in by_responsible_qs
+        ]
+
+        plans_qs = RetestPlan.objects.filter(wax_sample__in=samples_qs)
+        retest_plans_total = plans_qs.count()
+        retest_plans_completed = plans_qs.filter(plan_status=PlanStatusChoices.COMPLETED).count()
+        retest_plans_pending = plans_qs.filter(
+            plan_status__in=[PlanStatusChoices.PLANNED, PlanStatusChoices.IN_PROGRESS]
+        ).count()
+
+        now = timezone.now()
+        retest_plans_overdue = 0
+        for p in plans_qs.filter(plan_status__in=[PlanStatusChoices.PLANNED, PlanStatusChoices.IN_PROGRESS]):
+            if now > p.planned_retest_time:
+                retest_plans_overdue += 1
+
+        result = {
+            'total_samples': total_samples,
+            'total_tests': total_tests,
+            'abnormal_sample_count': abnormal_sample_count,
+            'abnormal_test_count': abnormal_test_count,
+            'abnormal_rate': abnormal_rate,
+            'smoke_high_count': smoke_high_count,
+            'temp_high_count': temp_high_count,
+            'temp_low_count': temp_low_count,
+            'pending_retest_count': pending_retest_count,
+            'need_reform_count': need_reform_count,
+            'version_ready_count': version_ready_count,
+            'unresolved_wick_alerts': unresolved_wick_alerts,
+            'unclosed_count': unclosed_count,
+            'closed_count': closed_count,
+            'closure_rate': closure_rate,
+            'retest_plans_total': retest_plans_total,
+            'retest_plans_completed': retest_plans_completed,
+            'retest_plans_pending': retest_plans_pending,
+            'retest_plans_overdue': retest_plans_overdue,
+            'by_status': by_status,
+            'by_abnormal_type': by_abnormal_type,
+            'by_fragrance': by_fragrance,
+            'by_cup_type': by_cup_type,
+            'by_responsible': by_responsible,
+        }
+        serializer = ReviewReportSummarySerializer(result)
+        return Response(serializer.data)
+
+
+class ReviewAbnormalSampleListView(APIView, ReviewReportMixin):
+    pagination_class = FlexiblePageNumberPagination
+
+    @property
+    def paginator(self):
+        if not hasattr(self, '_paginator'):
+            self._paginator = self.pagination_class()
+        return self._paginator
+
+    def get(self, request):
+        samples_qs = self.get_filtered_samples(request)
+        test_batch_set = set(samples_qs.values_list('test_batch', flat=True).distinct())
+        wick_spec_set = set(samples_qs.values_list('wick_spec', flat=True).distinct())
+        alert_map = set()
+        for a in WickProblemAlert.objects.filter(
+            resolved=False,
+            test_batch__in=test_batch_set,
+            wick_spec__in=wick_spec_set
+        ):
+            alert_map.add((a.test_batch, a.wick_spec))
+
+        abnormal_samples = []
+        for s in samples_qs.prefetch_related('burn_tests', 'retest_closures'):
+            abnormal_types = self._get_sample_abnormal_types(s)
+            abnormal_count = self._count_sample_abnormal(s)
+            if not abnormal_types and abnormal_count == 0:
+                continue
+            latest = s.burn_tests.order_by('-test_time').first()
+            has_closure = s.retest_closures.exists()
+            is_closed = self._is_sample_closed(s)
+            abnormal_samples.append({
+                'id': s.id,
+                'sample_code': s.sample_code,
+                'test_batch': s.test_batch,
+                'fragrance_code': s.fragrance_code,
+                'cup_type': s.cup_type,
+                'wick_spec': s.wick_spec,
+                'responsible_person': s.responsible_person,
+                'status': s.status,
+                'status_display': s.get_status_display(),
+                'abnormal_types': abnormal_types,
+                'abnormal_count': abnormal_count,
+                'latest_test_time': latest.test_time if latest else None,
+                'retest_count': s.retest_count,
+                'has_wick_alert': (s.test_batch, s.wick_spec) in alert_map,
+                'has_closure': has_closure,
+                'is_closed': is_closed,
+            })
+
+        abnormal_samples.sort(key=lambda x: (x['is_closed'], -x['abnormal_count']))
+
+        page = self.paginator.paginate_queryset(abnormal_samples, request, view=self)
+        if page is not None:
+            serializer = ReviewAbnormalSampleSerializer(page, many=True)
+            return self.paginator.get_paginated_response(serializer.data)
+        serializer = ReviewAbnormalSampleSerializer(abnormal_samples, many=True)
+        return Response({'count': len(abnormal_samples), 'results': serializer.data})
+
+
+class ReviewWickRankingView(APIView, ReviewReportMixin):
+    def get(self, request):
+        samples_qs = self.get_filtered_samples(request)
+        tests_qs = self.get_filtered_tests(samples_qs)
+        limit = int(request.query_params.get('limit', 15))
+
+        test_batch_set = set(samples_qs.values_list('test_batch', flat=True).distinct())
+        wick_spec_set = set(samples_qs.values_list('wick_spec', flat=True).distinct())
+        alert_map = set()
+        for a in WickProblemAlert.objects.filter(
+            resolved=False,
+            test_batch__in=test_batch_set,
+            wick_spec__in=wick_spec_set
+        ):
+            alert_map.add((a.test_batch, a.wick_spec))
+
+        problem_tests = tests_qs.filter(
+            Q(auto_flags__smoke_high=True) | Q(auto_flags__temp_high=True)
+        )
+        wick_problem_ids = problem_tests.values_list('wax_sample__wick_spec', 'wax_sample_id').distinct()
+        wick_problem_map = {}
+        for wick_spec, sample_id in wick_problem_ids:
+            if wick_spec not in wick_problem_map:
+                wick_problem_map[wick_spec] = set()
+            wick_problem_map[wick_spec].add(sample_id)
+
+        smoke_high_by_wick = {}
+        for wick_spec, sample_id in tests_qs.filter(auto_flags__smoke_high=True).values_list(
+            'wax_sample__wick_spec', 'wax_sample_id'
+        ).distinct():
+            smoke_high_by_wick.setdefault(wick_spec, set()).add(sample_id)
+
+        temp_high_by_wick = {}
+        for wick_spec, sample_id in tests_qs.filter(auto_flags__temp_high=True).values_list(
+            'wax_sample__wick_spec', 'wax_sample_id'
+        ).distinct():
+            temp_high_by_wick.setdefault(wick_spec, set()).add(sample_id)
+
+        total_flags_by_wick = {}
+        for t in problem_tests.values('wax_sample__wick_spec').annotate(
+            cnt=Count('id')
+        ).order_by('-cnt'):
+            total_flags_by_wick[t['wax_sample__wick_spec']] = t['cnt']
+
+        wick_stats = []
+        for wick_spec in wick_spec_set:
+            total_samples = samples_qs.filter(wick_spec=wick_spec).count()
+            problem_sample_ids = wick_problem_map.get(wick_spec, set())
+            problem_sample_count = len(problem_sample_ids)
+            if problem_sample_count == 0:
+                continue
+            problem_rate = round(problem_sample_count / total_samples * 100, 1) if total_samples > 0 else 0
+            affected_samples = list(
+                WaxSample.objects.filter(id__in=problem_sample_ids).values(
+                    'id', 'sample_code', 'test_batch', 'fragrance_code', 'cup_type'
+                )
+            )
+            has_unresolved = False
+            for tb in test_batch_set:
+                if (tb, wick_spec) in alert_map:
+                    has_unresolved = True
+                    break
+            smoke_high_count = len(smoke_high_by_wick.get(wick_spec, set()))
+            temp_high_count = len(temp_high_by_wick.get(wick_spec, set()))
+            total_problem_flags = total_flags_by_wick.get(wick_spec, 0)
+            wick_stats.append({
+                'wick_spec': wick_spec,
+                'total_samples': total_samples,
+                'problem_sample_count': problem_sample_count,
+                'problem_rate': problem_rate,
+                'smoke_high_count': smoke_high_count,
+                'temp_high_count': temp_high_count,
+                'total_problem_flags': total_problem_flags,
+                'affected_samples': affected_samples,
+                'has_unresolved_alert': has_unresolved,
+            })
+
+        wick_stats.sort(key=lambda x: (-x['problem_sample_count'], -x['problem_rate']))
+        wick_stats = wick_stats[:limit]
+
+        serializer = ReviewWickRankingSerializer(wick_stats, many=True)
+        return Response({'count': len(wick_stats), 'results': serializer.data})
+
+
+class ReviewUnclosedListView(APIView, ReviewReportMixin):
+    pagination_class = FlexiblePageNumberPagination
+
+    @property
+    def paginator(self):
+        if not hasattr(self, '_paginator'):
+            self._paginator = self.pagination_class()
+        return self._paginator
+
+    def get(self, request):
+        samples_qs = self.get_filtered_samples(request)
+        now = timezone.now()
+        test_batch_set = set(samples_qs.values_list('test_batch', flat=True).distinct())
+        wick_spec_set = set(samples_qs.values_list('wick_spec', flat=True).distinct())
+        alert_map = set()
+        for a in WickProblemAlert.objects.filter(
+            resolved=False,
+            test_batch__in=test_batch_set,
+            wick_spec__in=wick_spec_set
+        ):
+            alert_map.add((a.test_batch, a.wick_spec))
+
+        unclosed_items = []
+        for s in samples_qs.prefetch_related('burn_tests', 'retest_closures', 'retest_plans').distinct():
+            has_abnormal = False
+            for t in s.burn_tests.all():
+                flags = t.analyze_flags()
+                if (flags.get('smoke_high') or flags.get('temp_high')
+                        or flags.get('temp_low') or t.abnormal_desc):
+                    has_abnormal = True
+                    break
+            if not has_abnormal:
+                continue
+            if self._is_sample_closed(s):
+                continue
+
+            latest = s.burn_tests.order_by('-test_time').first()
+            latest_test_time = latest.test_time if latest else None
+            days_since = None
+            if latest_test_time:
+                delta = now - latest_test_time
+                days_since = delta.days
+
+            abnormal_reason_parts = self._get_sample_abnormal_types(s)
+            abnormal_reason = '、'.join(abnormal_reason_parts) if abnormal_reason_parts else '存在异常'
+
+            retest_overdue = s.has_pending_retest_missing()
+
+            latest_plan = s.retest_plans.order_by('-created_at').first()
+            has_retest_plan = latest_plan is not None
+            retest_plan_status = latest_plan.plan_status if latest_plan else None
+            retest_plan_status_display = latest_plan.get_plan_status_display() if latest_plan else None
+            planned_retest_time = latest_plan.planned_retest_time if latest_plan else None
+
+            unclosed_items.append({
+                'id': s.id,
+                'sample_code': s.sample_code,
+                'test_batch': s.test_batch,
+                'fragrance_code': s.fragrance_code,
+                'cup_type': s.cup_type,
+                'wick_spec': s.wick_spec,
+                'responsible_person': s.responsible_person,
+                'status': s.status,
+                'status_display': s.get_status_display(),
+                'abnormal_reason': abnormal_reason,
+                'latest_test_time': latest_test_time,
+                'days_since_last_test': days_since,
+                'retest_overdue': retest_overdue,
+                'has_retest_plan': has_retest_plan,
+                'retest_plan_status': retest_plan_status,
+                'retest_plan_status_display': retest_plan_status_display,
+                'planned_retest_time': planned_retest_time,
+                'has_wick_alert': (s.test_batch, s.wick_spec) in alert_map,
+            })
+
+        def sort_key(x):
+            priority = 0
+            if x['retest_overdue']:
+                priority += 4
+            if x['has_wick_alert']:
+                priority += 2
+            if not x['has_retest_plan']:
+                priority += 1
+            days = x['days_since_last_test'] or 0
+            return (-priority, -days)
+
+        unclosed_items.sort(key=sort_key)
+
+        page = self.paginator.paginate_queryset(unclosed_items, request, view=self)
+        if page is not None:
+            serializer = ReviewUnclosedItemSerializer(page, many=True)
+            return self.paginator.get_paginated_response(serializer.data)
+        serializer = ReviewUnclosedItemSerializer(unclosed_items, many=True)
+        return Response({'count': len(unclosed_items), 'results': serializer.data})
+
+
+class ReviewClosedRecordsView(APIView, ReviewReportMixin):
+    pagination_class = FlexiblePageNumberPagination
+
+    @property
+    def paginator(self):
+        if not hasattr(self, '_paginator'):
+            self._paginator = self.pagination_class()
+        return self._paginator
+
+    def get(self, request):
+        samples_qs = self.get_filtered_samples(request)
+        closures_qs = RetestClosure.objects.filter(
+            wax_sample__in=samples_qs,
+            action__in=[ClosureActionChoices.CONFIRM_VERSION, ClosureActionChoices.TRANSFER_REFORM]
+        ).select_related('wax_sample', 'burn_test').order_by('-created_at')
+
+        records = []
+        for c in closures_qs:
+            s = c.wax_sample
+            records.append({
+                'closure_id': c.id,
+                'sample_id': s.id,
+                'sample_code': s.sample_code,
+                'test_batch': s.test_batch,
+                'fragrance_code': s.fragrance_code,
+                'cup_type': s.cup_type,
+                'wick_spec': s.wick_spec,
+                'responsible_person': s.responsible_person,
+                'action': c.action,
+                'action_display': c.get_action_display(),
+                'handler': c.handler,
+                'remark': c.remark,
+                'created_at': c.created_at,
+                'burn_test_round': c.burn_test.test_round if c.burn_test else None,
+            })
+
+        page = self.paginator.paginate_queryset(records, request, view=self)
+        if page is not None:
+            serializer = ReviewClosedRecordSerializer(page, many=True)
+            return self.paginator.get_paginated_response(serializer.data)
+        serializer = ReviewClosedRecordSerializer(records, many=True)
+        return Response({'count': len(records), 'results': serializer.data})
+
+
+class ReviewSampleDetailView(APIView):
+    def get(self, request, pk=None):
+        try:
+            sample = WaxSample.objects.select_related().prefetch_related(
+                'burn_tests', 'retest_closures', 'retest_plans'
+            ).get(pk=pk)
+        except WaxSample.DoesNotExist:
+            return Response({'error': '蜡样不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        wick_alerts = WickProblemAlert.objects.filter(
+            test_batch=sample.test_batch,
+            wick_spec=sample.wick_spec
+        ).order_by('-last_triggered')
+
+        data = {
+            'id': sample.id,
+            'sample_code': sample.sample_code,
+            'test_batch': sample.test_batch,
+            'fragrance_code': sample.fragrance_code,
+            'cup_type': sample.cup_type,
+            'wick_spec': sample.wick_spec,
+            'responsible_person': sample.responsible_person,
+            'status': sample.status,
+            'status_display': sample.get_status_display(),
+            'created_at': sample.created_at,
+            'updated_at': sample.updated_at,
+            'remarks': sample.remarks or '',
+            'retest_count': sample.retest_count,
+            'wick_alerts': wick_alerts,
+            'burn_tests': sample.burn_tests.order_by('test_time').all(),
+            'retest_plans': sample.retest_plans.prefetch_related('executions').order_by('-created_at').all(),
+            'closure_history': sample.retest_closures.order_by('-created_at').all(),
+        }
+        serializer = ReviewSampleDetailSerializer(data)
+        return Response(serializer.data)
+
+
+class ReviewReportOptionsView(APIView):
+    def get(self, request):
+        test_batches = list(
+            WaxSample.objects.values_list('test_batch', flat=True).distinct().order_by('-test_batch')
+        )
+        fragrance_codes = list(
+            WaxSample.objects.values_list('fragrance_code', flat=True).distinct().order_by('fragrance_code')
+        )
+        cup_types = list(
+            WaxSample.objects.values_list('cup_type', flat=True).distinct().order_by('cup_type')
+        )
+        wick_specs = list(
+            WaxSample.objects.values_list('wick_spec', flat=True).distinct().order_by('wick_spec')
+        )
+        responsible_persons = list(
+            WaxSample.objects.values_list('responsible_person', flat=True).distinct().order_by('responsible_person')
+        )
+
+        status_options = [{'value': v, 'label': l} for v, l in StatusChoices.choices]
+        abnormal_type_options = [
+            {'value': 'smoke_high', 'label': '烟量偏高'},
+            {'value': 'temp_high', 'label': '杯壁温度偏高'},
+            {'value': 'temp_low', 'label': '杯壁温度偏低'},
+            {'value': 'abnormal_desc', 'label': '人工异常描述'},
+        ]
+        processing_status_options = [
+            {'value': 'unclosed', 'label': '未闭环'},
+            {'value': 'closed', 'label': '已闭环'},
+            {'value': 'has_closure', 'label': '有处理记录'},
+            {'value': 'no_closure', 'label': '无处理记录'},
+        ]
+
+        return Response({
+            'test_batches': test_batches,
+            'fragrance_codes': fragrance_codes,
+            'cup_types': cup_types,
+            'wick_specs': wick_specs,
+            'responsible_persons': responsible_persons,
+            'status_options': StatusSerializer(status_options, many=True).data,
+            'abnormal_type_options': AbnormalTypeSerializer(abnormal_type_options, many=True).data,
+            'processing_status_options': ProcessingStatusSerializer(processing_status_options, many=True).data,
+        })

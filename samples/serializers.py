@@ -1,3 +1,4 @@
+from django.db import models
 from rest_framework import serializers
 from .models import (
     WaxSample, BurnTest, WickProblemAlert, RetestClosure,
@@ -395,3 +396,259 @@ class PlanSummarySerializer(serializers.Serializer):
     by_source = serializers.ListField(child=serializers.DictField())
     by_responsible = serializers.ListField(child=serializers.DictField())
     recent_plans = serializers.ListField(child=serializers.DictField())
+
+
+class AbnormalTypeChoices(models.TextChoices):
+    SMOKE_HIGH = 'smoke_high', '烟量偏高'
+    TEMP_HIGH = 'temp_high', '杯壁温度偏高'
+    TEMP_LOW = 'temp_low', '杯壁温度偏低'
+    ABNORMAL_DESC = 'abnormal_desc', '人工异常描述'
+
+
+class ReviewReportSummarySerializer(serializers.Serializer):
+    total_samples = serializers.IntegerField()
+    total_tests = serializers.IntegerField()
+    abnormal_sample_count = serializers.IntegerField()
+    abnormal_test_count = serializers.IntegerField()
+    abnormal_rate = serializers.FloatField()
+    smoke_high_count = serializers.IntegerField()
+    temp_high_count = serializers.IntegerField()
+    temp_low_count = serializers.IntegerField()
+    pending_retest_count = serializers.IntegerField()
+    need_reform_count = serializers.IntegerField()
+    version_ready_count = serializers.IntegerField()
+    unresolved_wick_alerts = serializers.IntegerField()
+    unclosed_count = serializers.IntegerField()
+    closed_count = serializers.IntegerField()
+    closure_rate = serializers.FloatField()
+    retest_plans_total = serializers.IntegerField()
+    retest_plans_completed = serializers.IntegerField()
+    retest_plans_pending = serializers.IntegerField()
+    retest_plans_overdue = serializers.IntegerField()
+    by_status = serializers.ListField(child=serializers.DictField())
+    by_abnormal_type = serializers.ListField(child=serializers.DictField())
+    by_fragrance = serializers.ListField(child=serializers.DictField())
+    by_cup_type = serializers.ListField(child=serializers.DictField())
+    by_responsible = serializers.ListField(child=serializers.DictField())
+
+
+class ReviewAbnormalSampleSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    sample_code = serializers.CharField()
+    test_batch = serializers.CharField()
+    fragrance_code = serializers.CharField()
+    cup_type = serializers.CharField()
+    wick_spec = serializers.CharField()
+    responsible_person = serializers.CharField()
+    status = serializers.CharField()
+    status_display = serializers.CharField()
+    abnormal_types = serializers.ListField(child=serializers.CharField())
+    abnormal_count = serializers.IntegerField()
+    latest_test_time = serializers.DateTimeField(allow_null=True)
+    retest_count = serializers.IntegerField()
+    has_wick_alert = serializers.BooleanField()
+    has_closure = serializers.BooleanField()
+    is_closed = serializers.BooleanField()
+
+
+class ReviewWickRankingSerializer(serializers.Serializer):
+    wick_spec = serializers.CharField()
+    total_samples = serializers.IntegerField()
+    problem_sample_count = serializers.IntegerField()
+    problem_rate = serializers.FloatField()
+    smoke_high_count = serializers.IntegerField()
+    temp_high_count = serializers.IntegerField()
+    total_problem_flags = serializers.IntegerField()
+    affected_samples = serializers.ListField(child=serializers.DictField())
+    has_unresolved_alert = serializers.BooleanField()
+
+
+class ReviewUnclosedItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    sample_code = serializers.CharField()
+    test_batch = serializers.CharField()
+    fragrance_code = serializers.CharField()
+    cup_type = serializers.CharField()
+    wick_spec = serializers.CharField()
+    responsible_person = serializers.CharField()
+    status = serializers.CharField()
+    status_display = serializers.CharField()
+    abnormal_reason = serializers.CharField()
+    latest_test_time = serializers.DateTimeField(allow_null=True)
+    days_since_last_test = serializers.IntegerField(allow_null=True)
+    retest_overdue = serializers.BooleanField()
+    has_retest_plan = serializers.BooleanField()
+    retest_plan_status = serializers.CharField(allow_null=True)
+    retest_plan_status_display = serializers.CharField(allow_null=True)
+    planned_retest_time = serializers.DateTimeField(allow_null=True)
+    has_wick_alert = serializers.BooleanField()
+
+
+class ReviewClosedRecordSerializer(serializers.Serializer):
+    closure_id = serializers.IntegerField()
+    sample_id = serializers.IntegerField()
+    sample_code = serializers.CharField()
+    test_batch = serializers.CharField()
+    fragrance_code = serializers.CharField()
+    cup_type = serializers.CharField()
+    wick_spec = serializers.CharField()
+    responsible_person = serializers.CharField()
+    action = serializers.CharField()
+    action_display = serializers.CharField()
+    handler = serializers.CharField()
+    remark = serializers.CharField()
+    created_at = serializers.DateTimeField()
+    burn_test_round = serializers.IntegerField(allow_null=True)
+
+
+class ReviewTestChainSerializer(serializers.ModelSerializer):
+    smoke_level_display = serializers.CharField(source='get_smoke_level_display', read_only=True)
+    burn_duration_minutes = serializers.FloatField(read_only=True)
+    auto_warnings = serializers.ListField(source='analyze_flags.warnings', read_only=True)
+    abnormal_type_labels = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BurnTest
+        fields = [
+            'id', 'test_round', 'is_retest', 'ignite_time', 'extinguish_time',
+            'melt_pool_diameter', 'smoke_level', 'smoke_level_display',
+            'cup_wall_temp', 'burn_duration_minutes', 'abnormal_desc',
+            'retest_suggestion', 'enter_next_round', 'test_time', 'tested_by',
+            'auto_flags', 'auto_warnings', 'abnormal_type_labels'
+        ]
+
+    def get_abnormal_type_labels(self, obj):
+        labels = []
+        flags = obj.analyze_flags()
+        if flags.get('smoke_high'):
+            labels.append('烟量偏高')
+        if flags.get('temp_high'):
+            labels.append('杯壁温度偏高')
+        if flags.get('temp_low'):
+            labels.append('杯壁温度偏低')
+        if obj.abnormal_desc:
+            labels.append('人工异常描述')
+        return labels
+
+
+class ReviewPlanExecutionSerializer(serializers.ModelSerializer):
+    closure_action_display = serializers.CharField(source='get_closure_action_display', read_only=True, allow_null=True)
+
+    class Meta:
+        model = RetestPlanExecution
+        fields = [
+            'id', 'actual_retest_time', 'executed_by', 'result_description',
+            'closure_action', 'closure_action_display', 'closure_remark',
+            'created_at'
+        ]
+
+
+class ReviewRetestPlanSerializer(serializers.ModelSerializer):
+    plan_status_display = serializers.CharField(source='get_plan_status_display', read_only=True)
+    source_reason_display = serializers.CharField(source='get_source_reason_display', read_only=True)
+    is_overdue = serializers.BooleanField(read_only=True)
+    executions = ReviewPlanExecutionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = RetestPlan
+        fields = [
+            'id', 'plan_no', 'plan_status', 'plan_status_display',
+            'planned_retest_time', 'responsible_person', 'retest_goal',
+            'attention_notes', 'source_reason', 'source_reason_display',
+            'is_overdue', 'cancelled_reason', 'created_at', 'updated_at',
+            'executions'
+        ]
+
+
+class ReviewSampleDetailSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    sample_code = serializers.CharField()
+    test_batch = serializers.CharField()
+    fragrance_code = serializers.CharField()
+    cup_type = serializers.CharField()
+    wick_spec = serializers.CharField()
+    responsible_person = serializers.CharField()
+    status = serializers.CharField()
+    status_display = serializers.CharField()
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+    remarks = serializers.CharField()
+    retest_count = serializers.IntegerField()
+    wick_alerts = ClosureWickAlertSerializer(many=True)
+    burn_tests = ReviewTestChainSerializer(many=True)
+    retest_plans = serializers.SerializerMethodField()
+    closure_history = RetestClosureSerializer(many=True)
+    summary = serializers.SerializerMethodField()
+
+    def get_retest_plans(self, obj):
+        if isinstance(obj, dict):
+            plans = obj.get('retest_plans') or []
+            if hasattr(plans, 'order_by'):
+                plans = plans.order_by('-created_at')
+            elif isinstance(plans, list):
+                plans = sorted(plans, key=lambda x: x.created_at if hasattr(x, 'created_at') else x.get('created_at'), reverse=True)
+        else:
+            plans = obj.retest_plans.order_by('-created_at')
+        return ReviewRetestPlanSerializer(plans, many=True).data
+
+    def get_summary(self, obj):
+        if isinstance(obj, dict):
+            burn_tests = obj.get('burn_tests', [])
+            closure_history = obj.get('closure_history', [])
+            _get_count = lambda qs: qs.count() if hasattr(qs, 'count') else len(qs)
+            _get_all = lambda qs: qs.all() if hasattr(qs, 'all') else qs
+            _get_latest = lambda qs: (qs.order_by('-created_at').first() if hasattr(qs, 'order_by') else (sorted(qs, key=lambda x: x.created_at, reverse=True)[0] if qs else None))
+        else:
+            burn_tests = obj.burn_tests
+            closure_history = obj.retest_closures
+            _get_count = lambda qs: qs.count()
+            _get_all = lambda qs: qs.all()
+            _get_latest = lambda qs: qs.order_by('-created_at').first()
+
+        total_tests = _get_count(burn_tests)
+        abnormal_tests = 0
+        abnormal_types = set()
+        for t in _get_all(burn_tests):
+            flags = t.analyze_flags() if hasattr(t, 'analyze_flags') else {}
+            has_abnormal = False
+            if flags.get('smoke_high'):
+                abnormal_types.add('烟量偏高')
+                has_abnormal = True
+            if flags.get('temp_high'):
+                abnormal_types.add('杯壁温度偏高')
+                has_abnormal = True
+            if flags.get('temp_low'):
+                abnormal_types.add('杯壁温度偏低')
+                has_abnormal = True
+            abnormal_desc = t.abnormal_desc if hasattr(t, 'abnormal_desc') else t.get('abnormal_desc')
+            if abnormal_desc:
+                abnormal_types.add('人工异常描述')
+                has_abnormal = True
+            if has_abnormal:
+                abnormal_tests += 1
+        has_closure = _get_count(closure_history) > 0
+        latest_closure = _get_latest(closure_history)
+        is_closed = False
+        if latest_closure:
+            action = latest_closure.action if hasattr(latest_closure, 'action') else latest_closure.get('action')
+            if action in [ClosureActionChoices.CONFIRM_VERSION, ClosureActionChoices.TRANSFER_REFORM]:
+                is_closed = True
+        return {
+            'total_tests': total_tests,
+            'abnormal_tests': abnormal_tests,
+            'abnormal_types': list(abnormal_types),
+            'has_closure': has_closure,
+            'is_closed': is_closed,
+            'latest_closure_action': latest_closure.get_action_display() if (latest_closure and hasattr(latest_closure, 'get_action_display')) else (latest_closure.get('action_display') if latest_closure else None),
+            'latest_closure_time': latest_closure.created_at if (latest_closure and hasattr(latest_closure, 'created_at')) else (latest_closure.get('created_at') if latest_closure else None),
+        }
+
+
+class AbnormalTypeSerializer(serializers.Serializer):
+    value = serializers.CharField()
+    label = serializers.CharField()
+
+
+class ProcessingStatusSerializer(serializers.Serializer):
+    value = serializers.CharField()
+    label = serializers.CharField()

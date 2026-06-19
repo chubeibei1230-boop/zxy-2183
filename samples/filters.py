@@ -204,3 +204,149 @@ class RetestPlanExecutionFilter(filters.FilterSet):
     class Meta:
         model = RetestPlanExecution
         fields = ['retest_plan']
+
+
+class ReviewReportFilter(filters.FilterSet):
+    test_batch = filters.CharFilter(field_name='test_batch', lookup_expr='icontains')
+    fragrance_code = filters.CharFilter(field_name='fragrance_code', lookup_expr='icontains')
+    cup_type = filters.CharFilter(field_name='cup_type', lookup_expr='icontains')
+    wick_spec = filters.CharFilter(field_name='wick_spec', lookup_expr='icontains')
+    responsible_person = filters.CharFilter(field_name='responsible_person', lookup_expr='icontains')
+    status = filters.ChoiceFilter(choices=StatusChoices.choices)
+    abnormal_type = filters.MultipleChoiceFilter(
+        method='filter_abnormal_type',
+        choices=[
+            ('smoke_high', '烟量偏高'),
+            ('temp_high', '杯壁温度偏高'),
+            ('temp_low', '杯壁温度偏低'),
+            ('abnormal_desc', '人工异常描述'),
+        ]
+    )
+    processing_status = filters.ChoiceFilter(
+        method='filter_processing_status',
+        choices=[
+            ('unclosed', '未闭环'),
+            ('closed', '已闭环'),
+            ('has_closure', '有处理记录'),
+            ('no_closure', '无处理记录'),
+        ]
+    )
+    date_from = filters.DateFilter(
+        method='filter_date_from',
+        label='开始日期（测试时间范围）'
+    )
+    date_to = filters.DateFilter(
+        method='filter_date_to',
+        label='结束日期（测试时间范围）'
+    )
+    created_from = filters.DateFilter(field_name='created_at', lookup_expr='date__gte')
+    created_to = filters.DateFilter(field_name='created_at', lookup_expr='date__lte')
+    has_wick_alert = filters.BooleanFilter(method='filter_has_wick_alert')
+    retest_overdue = filters.BooleanFilter(method='filter_retest_overdue')
+
+    class Meta:
+        model = WaxSample
+        fields = []
+
+    def filter_abnormal_type(self, queryset, name, values):
+        if not values:
+            return queryset
+        q_objects = Q()
+        sample_ids = set()
+        for value in values:
+            if value == 'smoke_high':
+                tests = BurnTest.objects.filter(auto_flags__smoke_high=True)
+            elif value == 'temp_high':
+                tests = BurnTest.objects.filter(auto_flags__temp_high=True)
+            elif value == 'temp_low':
+                tests = BurnTest.objects.filter(auto_flags__temp_low=True)
+            elif value == 'abnormal_desc':
+                tests = BurnTest.objects.filter(abnormal_desc__gt='')
+            else:
+                continue
+            ids = tests.values_list('wax_sample_id', flat=True).distinct()
+            sample_ids.update(ids)
+        if sample_ids:
+            return queryset.filter(id__in=sample_ids)
+        return queryset.none()
+
+    def filter_processing_status(self, queryset, name, value):
+        if value == 'unclosed':
+            ids = []
+            for s in queryset.prefetch_related('retest_closures', 'burn_tests'):
+                latest_closure = s.retest_closures.order_by('-created_at').first()
+                has_abnormal = s.burn_tests.filter(
+                    Q(auto_flags__smoke_high=True)
+                    | Q(auto_flags__temp_high=True)
+                    | Q(abnormal_desc__gt='')
+                ).exists()
+                if not has_abnormal:
+                    continue
+                is_closed = False
+                if latest_closure and latest_closure.action in [
+                    ClosureActionChoices.CONFIRM_VERSION,
+                    ClosureActionChoices.TRANSFER_REFORM
+                ]:
+                    is_closed = True
+                if not is_closed:
+                    ids.append(s.id)
+            return queryset.filter(id__in=ids)
+        elif value == 'closed':
+            ids = []
+            for s in queryset.prefetch_related('retest_closures'):
+                latest_closure = s.retest_closures.order_by('-created_at').first()
+                if latest_closure and latest_closure.action in [
+                    ClosureActionChoices.CONFIRM_VERSION,
+                    ClosureActionChoices.TRANSFER_REFORM
+                ]:
+                    ids.append(s.id)
+            return queryset.filter(id__in=ids)
+        elif value == 'has_closure':
+            return queryset.filter(retest_closures__isnull=False).distinct()
+        elif value == 'no_closure':
+            return queryset.filter(retest_closures__isnull=True)
+        return queryset
+
+    def filter_date_from(self, queryset, name, value):
+        if value:
+            return queryset.filter(
+                burn_tests__isnull=False,
+                burn_tests__test_time__date__gte=value
+            ).distinct()
+        return queryset
+
+    def filter_date_to(self, queryset, name, value):
+        if value:
+            return queryset.filter(
+                burn_tests__isnull=False,
+                burn_tests__test_time__date__lte=value
+            ).distinct()
+        return queryset
+
+    def filter_has_wick_alert(self, queryset, name, value):
+        if value:
+            return queryset.filter(
+                Q(test_batch__in=list(
+                    WickProblemAlert.objects.filter(resolved=False).values_list('test_batch', flat=True)
+                )) & Q(wick_spec__in=list(
+                    WickProblemAlert.objects.filter(resolved=False).values_list('wick_spec', flat=True)
+                ))
+            ).distinct()
+        return queryset
+
+    def filter_retest_overdue(self, queryset, name, value):
+        from django.utils import timezone
+        from datetime import timedelta
+        from .models import RETARGET_MISSING_DAYS
+        ids = []
+        for s in queryset.filter(status=StatusChoices.PENDING_RETEST).prefetch_related('burn_tests'):
+            latest = s.burn_tests.order_by('-test_time').first()
+            is_overdue = False
+            if not latest:
+                is_overdue = True
+            elif not latest.is_retest:
+                cutoff = latest.test_time + timedelta(days=RETARGET_MISSING_DAYS)
+                is_overdue = timezone.now() > cutoff
+            if is_overdue == value:
+                ids.append(s.id)
+        return queryset.filter(id__in=ids)

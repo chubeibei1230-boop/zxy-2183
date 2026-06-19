@@ -6,7 +6,10 @@ from .views import (
     ProblemWickRankingView, PendingRetestView, TestDurationDistributionView,
     RetestClosureViewSet, ClosureSampleViewSet, ClosureSummaryView,
     RetestPlanViewSet, RetestPlanExecutionViewSet,
-    health_check, closure_dashboard, retest_plan_dashboard
+    health_check, closure_dashboard, retest_plan_dashboard, review_report_dashboard,
+    ReviewReportSummaryView, ReviewAbnormalSampleListView, ReviewWickRankingView,
+    ReviewUnclosedListView, ReviewClosedRecordsView, ReviewSampleDetailView,
+    ReviewReportOptionsView
 )
 
 router = DefaultRouter()
@@ -27,4 +30,12 @@ urlpatterns = [
     path('closure/summary/', ClosureSummaryView.as_view(), name='closure-summary'),
     path('closure/dashboard/', closure_dashboard, name='closure-dashboard'),
     path('retest-plan/dashboard/', retest_plan_dashboard, name='retest-plan-dashboard'),
+    path('review/options/', ReviewReportOptionsView.as_view(), name='review-options'),
+    path('review/summary/', ReviewReportSummaryView.as_view(), name='review-summary'),
+    path('review/abnormal-samples/', ReviewAbnormalSampleListView.as_view(), name='review-abnormal-samples'),
+    path('review/wick-ranking/', ReviewWickRankingView.as_view(), name='review-wick-ranking'),
+    path('review/unclosed/', ReviewUnclosedListView.as_view(), name='review-unclosed'),
+    path('review/closed-records/', ReviewClosedRecordsView.as_view(), name='review-closed-records'),
+    path('review/sample-detail/<int:pk>/', ReviewSampleDetailView.as_view(), name='review-sample-detail'),
+    path('review/dashboard/', review_report_dashboard, name='review-dashboard'),
 ]

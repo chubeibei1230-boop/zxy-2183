@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>蜡样异常复盘与处置报告 - 香氛蜡样研发管理系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            color: #303133;
+            min-height: 100vh;
+        }
+        .nav-bar {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            color: white;
+            padding: 14px 40px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .nav-bar h1 { font-size: 18px; font-weight: 600; }
+        .nav-links { display: flex; gap: 4px; margin-left: auto; }
+        .nav-link {
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            opacity: 0.85;
+            transition: all 0.2s;
+        }
+        .nav-link:hover, .nav-link.active { opacity: 1; background: rgba(255,255,255,0.15); }
+        .page-header {
+            background: white;
+            padding: 20px 40px;
+            border-bottom: 1px solid #ebeef5;
+        }
+        .page-title { font-size: 20px; font-weight: 600; color: #1e293b; }
+        .page-desc { font-size: 13px; color: #64748b; margin-top: 4px; }
+        .container { max-width: 1520px; margin: 0 auto; padding: 24px 40px; }
+        .filter-bar {
+            background: white;
+            border-radius: 10px;
+            padding: 16px 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            margin-bottom: 20px;
+        }
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .filter-group { display: flex; flex-direction: column; gap: 4px; }
+        .filter-group label {
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 500;
+        }
+        .filter-group input, .filter-group select {
+            padding: 7px 10px;
+            border: 1px solid #dcdfe6;
+            border-radius: 5px;
+            font-size: 13px;
+            outline: none;
+            min-width: 140px;
+            background: white;
+        }
+        .filter-group input:focus, .filter-group select:focus { border-color: #3b82f6; }
+        .filter-date { display: flex; gap: 4px; }
+        .filter-date input { min-width: 120px; }
+        .filter-actions { display: flex; gap: 8px; margin-left: auto; }
+        .btn {
+            padding: 8px 18px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-default {
+            background: white;
+            color: #64748b;
+            border: 1px solid #dcdfe6;
+        }
+        .btn-default:hover { color: #3b82f6; border-color: #bfdbfe; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-danger:hover { background: #dc2626; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 10px;
+            padding: 18px 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            border-left: 4px solid;
+            transition: transform 0.2s;
+        }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .stat-label { font-size: 12px; color: #94a3b8; }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            margin-top: 6px;
+            line-height: 1.1;
+        }
+        .stat-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+        .stat-blue { border-left-color: #3b82f6; } .stat-blue .stat-value { color: #3b82f6; }
+        .stat-red { border-left-color: #ef4444; } .stat-red .stat-value { color: #ef4444; }
+        .stat-amber { border-left-color: #f59e0b; } .stat-amber .stat-value { color: #f59e0b; }
+        .stat-emerald { border-left-color: #10b981; } .stat-emerald .stat-value { color: #10b981; }
+        .stat-purple { border-left-color: #8b5cf6; } .stat-purple .stat-value { color: #8b5cf6; }
+        .stat-slate { border-left-color: #64748b; } .stat-slate .stat-value { color: #64748b; }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 20px;
+        }
+        .three-col {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 20px;
+        }
+        .panel {
+            background: white;
+            border-radius: 10px;
+            padding: 18px 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .panel-title::before {
+            content: '';
+            display: block;
+            width: 3px;
+            height: 14px;
+            background: #3b82f6;
+            border-radius: 2px;
+        }
+        .chart-area {
+            height: 240px;
+            display: flex;
+            align-items: flex-end;
+            gap: 6px;
+            padding: 10px 0;
+        }
+        .chart-bar-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            height: 100%;
+            justify-content: flex-end;
+            min-width: 0;
+        }
+        .chart-bars {
+            display: flex;
+            gap: 2px;
+            align-items: flex-end;
+            height: 100%;
+            width: 100%;
+            justify-content: center;
+        }
+        .chart-bar {
+            width: 16px;
+            border-radius: 3px 3px 0 0;
+            transition: opacity 0.2s;
+            min-height: 2px;
+        }
+        .chart-bar:hover { opacity: 0.75; }
+        .chart-x-label {
+            font-size: 10px;
+            color: #94a3b8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+        .chart-legend {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: #64748b;
+            flex-wrap: wrap;
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+        .bar-chart-horizontal { display: flex; flex-direction: column; gap: 8px; }
+        .bar-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+        }
+        .bar-label {
+            width: 80px;
+            color: #475569;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .bar-track {
+            flex: 1;
+            height: 20px;
+            background: #f1f5f9;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        .bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .bar-value {
+            width: 40px;
+            text-align: right;
+            color: #475569;
+            font-weight: 600;
+        }
+        .donut-wrap {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            height: 220px;
+        }
+        .donut-chart {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            position: relative;
+            flex-shrink: 0;
+        }
+        .donut-center {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        .donut-center-num { font-size: 28px; font-weight: 700; color: #1e293b; }
+        .donut-center-label { font-size: 11px; color: #94a3b8; }
+        .donut-legend { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+        .donut-legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+        .donut-legend-color { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+        .donut-legend-name { flex: 1; color: #475569; }
+        .donut-legend-val { color: #64748b; font-weight: 600; }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 16px;
+        }
+        .tab {
+            padding: 10px 18px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #64748b;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .tab.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+        }
+        .tab-badge {
+            background: #e2e8f0;
+            color: #475569;
+            padding: 1px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        .tab.active .tab-badge {
+            background: #dbeafe;
+            color: #3b82f6;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .table-wrap {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th {
+            background: #f8fafc;
+            padding: 11px 14px;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            border-bottom: 1px solid #e2e8f0;
+            white-space: nowrap;
+            font-size: 12px;
+        }
+        td {
+            padding: 11px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+        }
+        tr:hover td { background: #f8fafc; }
+        .tag {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .tag + .tag { margin-left: 4px; }
+        .tag-red { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+        .tag-amber { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+        .tag-emerald { background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
+        .tag-blue { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+        .tag-slate { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+        .tag-purple { background: #faf5ff; color: #7c3aed; border: 1px solid #e9d5ff; }
+        .link-text { color: #3b82f6; cursor: pointer; font-weight: 500; }
+        .link-text:hover { text-decoration: underline; }
+        .priority-dot {
+            display: inline-block;
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .p-high { background: #ef4444; }
+        .p-mid { background: #f59e0b; }
+        .p-low { background: #10b981; }
+        .empty {
+            text-align: center;
+            padding: 50px 20px;
+            color: #94a3b8;
+            font-size: 13px;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            padding: 14px;
+            background: #fafbfc;
+        }
+        .page-btn {
+            padding: 5px 12px;
+            border: 1px solid #dcdfe6;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #64748b;
+        }
+        .page-btn.active, .page-btn:hover {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        .page-info { font-size: 12px; color: #94a3b8; margin: 0 10px; }
+
+        .modal-mask {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-mask.show { display: flex; }
+        .modal {
+            background: white;
+            border-radius: 12px;
+            width: 1080px;
+            max-width: 94vw;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .modal-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .modal-title { font-size: 16px; font-weight: 600; color: #1e293b; }
+        .modal-close {
+            border: none;
+            background: none;
+            font-size: 22px;
+            cursor: pointer;
+            color: #94a3b8;
+            line-height: 1;
+        }
+        .modal-close:hover { color: #475569; }
+        .modal-body {
+            padding: 20px 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .modal-footer {
+            padding: 14px 24px;
+            border-top: 1px solid #e2e8f0;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .detail-summary {
+            background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 18px;
+        }
+        .summary-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1e40af;
+            margin-bottom: 10px;
+        }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+        .summary-item { font-size: 12px; }
+        .summary-item-label { color: #64748b; margin-bottom: 3px; }
+        .summary-item-value { color: #1e293b; font-weight: 600; font-size: 14px; }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px 24px;
+            margin-bottom: 14px;
+        }
+        .info-row {
+            display: flex;
+            gap: 6px;
+            font-size: 12px;
+        }
+        .info-label { color: #94a3b8; flex-shrink: 0; min-width: 68px; }
+        .info-value { color: #334155; font-weight: 500; word-break: break-all; }
+        .sub-card {
+            background: #fafbfc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin: 14px 0;
+        }
+        .sub-card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .sub-card-title::before {
+            content: '';
+            display: inline-block;
+            width: 3px;
+            height: 12px;
+            background: #3b82f6;
+            border-radius: 2px;
+        }
+        .timeline { display: flex; flex-direction: column; gap: 0; }
+        .timeline-item {
+            display: flex;
+            gap: 14px;
+            position: relative;
+            padding-bottom: 18px;
+        }
+        .timeline-item:last-child { padding-bottom: 0; }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: 11px;
+            top: 26px;
+            bottom: 0;
+            width: 2px;
+            background: #e2e8f0;
+        }
+        .timeline-item:last-child::before { display: none; }
+        .timeline-dot {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #e0e7ff;
+            color: #3b82f6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            flex-shrink: 0;
+            z-index: 1;
+        }
+        .timeline-dot.retest { background: #fef3c7; color: #d97706; }
+        .timeline-dot.closure { background: #d1fae5; color: #059669; }
+        .timeline-dot.plan { background: #ede9fe; color: #7c3aed; }
+        .timeline-body { flex: 1; }
+        .timeline-head {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .timeline-title { font-size: 13px; font-weight: 600; color: #1e293b; }
+        .timeline-time { font-size: 11px; color: #94a3b8; }
+        .timeline-content { font-size: 12px; color: #64748b; line-height: 1.6; }
+        .test-metrics {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .metric-box {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+        .metric-label { font-size: 10px; color: #94a3b8; }
+        .metric-value { font-size: 14px; font-weight: 600; color: #1e293b; margin-top: 2px; }
+        .metric-value.abnormal { color: #dc2626; }
+        .abnormal-tag-list { margin-top: 8px; }
+        .plan-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+        }
+        .plan-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .plan-no { font-size: 13px; font-weight: 600; color: #1e293b; }
+        .alert-list { list-style: none; }
+        .alert-item {
+            padding: 10px 12px;
+            background: #fef2f2;
+            border-left: 3px solid #ef4444;
+            border-radius: 0 6px 6px 0;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #991b1b;
+        }
+        .closure-history-item {
+            padding: 10px 0;
+            border-bottom: 1px dashed #e2e8f0;
+            font-size: 12px;
+        }
+        .closure-history-item:last-child { border-bottom: none; }
+        .closure-head {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        .execution-item {
+            padding: 10px 12px;
+            background: #fafbfc;
+            border-radius: 6px;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="nav-bar">
+    <h1>🕯 香氛蜡样研发管理系统</h1>
+    <div class="nav-links">
+        <div class="nav-link" onclick="location.href='/closure/dashboard/'">复测闭环</div>
+        <div class="nav-link" onclick="location.href='/retest-plan/dashboard/'">复测计划</div>
+        <div class="nav-link active">复盘报告</div>
+    </div>
+</div>
+
+<div class="page-header">
+    <div class="page-title">📊 蜡样异常复盘与处置报告</div>
+    <div class="page-desc">围绕测试批次或时间范围，汇总蜡样基础信息、燃烧测试异常、芯线集中问题、复测执行情况与闭环处理结论，辅助研发人员快速定位问题来源与处理优先级</div>
+</div>
+
+<div class="container">
+    <!-- 筛选区 -->
+    <div class="filter-bar">
+        <div class="filter-row" id="filterRow">
+            <div class="filter-group">
+                <label>测试批次</label>
+                <select id="f_testBatch">
+                    <option value="">全部批次</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>香型代号</label>
+                <select id="f_fragrance">
+                    <option value="">全部香型</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>杯型</label>
+                <select id="f_cupType">
+                    <option value="">全部杯型</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>芯线规格</label>
+                <select id="f_wickSpec">
+                    <option value="">全部芯线</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>责任人</label>
+                <select id="f_responsible">
+                    <option value="">全部责任人</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>异常类型</label>
+                <select id="f_abnormalType" multiple size="4" style="min-width:140px;max-height:90px">
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>处理状态</label>
+                <select id="f_processingStatus">
+                    <option value="">全部</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>蜡样状态</label>
+                <select id="f_status">
+                    <option value="">全部</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>测试时间范围</label>
+                <div class="filter-date">
+                    <input type="date" id="f_dateFrom" placeholder="开始">
+                    <input type="date" id="f_dateTo" placeholder="结束">
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-primary" onclick="loadAllData()">🔍 查询</button>
+                <button class="btn btn-default" onclick="resetFilters()">重置</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <!-- 图表区 -->
+    <div class="two-col">
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">异常类型分布</div>
+                <div class="chart-legend">
+                    <span class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>烟量偏高</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>杯壁温度偏高</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span>杯壁温度偏低</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#8b5cf6"></span>人工异常描述</span>
+                </div>
+            </div>
+            <div class="donut-wrap">
+                <div class="donut-chart" id="abnormalDonut">
+                    <div class="donut-center">
+                        <div class="donut-center-num" id="donutNum">0</div>
+                        <div class="donut-center-label">异常总数</div>
+                    </div>
+                </div>
+                <div class="donut-legend" id="abnormalLegend"></div>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">蜡样处理状态分布</div>
+            </div>
+            <div class="bar-chart-horizontal" id="statusBarChart"></div>
+        </div>
+    </div>
+
+    <div class="two-col">
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">按香型Top10（异常样品数）</div>
+            </div>
+            <div class="bar-chart-horizontal" id="fragranceBarChart"></div>
+        </div>
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">按责任人分布</div>
+            </div>
+            <div class="bar-chart-horizontal" id="responsibleBarChart"></div>
+        </div>
+    </div>
+
+    <!-- Tab内容区 -->
+    <div class="panel" style="padding:16px 20px 6px">
+        <div class="tabs">
+            <div class="tab active" data-tab="abnormal" onclick="switchTab('abnormal')">
+                异常样品清单 <span class="tab-badge" id="tabBadgeAbnormal">0</span>
+            </div>
+            <div class="tab" data-tab="wick" onclick="switchTab('wick')">
+                问题芯线排行 <span class="tab-badge" id="tabBadgeWick">0</span>
+            </div>
+            <div class="tab" data-tab="unclosed" onclick="switchTab('unclosed')">
+                未闭环事项 <span class="tab-badge" id="tabBadgeUnclosed">0</span>
+            </div>
+            <div class="tab" data-tab="closed" onclick="switchTab('closed')">
+                已处理记录 <span class="tab-badge" id="tabBadgeClosed">0</span>
+            </div>
+        </div>
+
+        <!-- 异常样品清单 -->
+        <div class="tab-content active" id="tab-abnormal">
+            <div class="table-wrap" style="box-shadow:none">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>蜡样编号</th>
+                            <th>测试批次</th>
+                            <th>香型</th>
+                            <th>杯型</th>
+                            <th>芯线规格</th>
+                            <th>责任人</th>
+                            <th>蜡样状态</th>
+                            <th>异常类型</th>
+                            <th>异常次数</th>
+                            <th>最近测试</th>
+                            <th>芯线告警</th>
+                            <th>闭环状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="abnormalTbody"></tbody>
+                </table>
+                <div class="empty" id="abnormalEmpty" style="display:none">暂无异常样品数据</div>
+                <div class="pagination" id="abnormalPagination"></div>
+            </div>
+        </div>
+
+        <!-- 问题芯线排行 -->
+        <div class="tab-content" id="tab-wick">
+            <div class="table-wrap" style="box-shadow:none">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:50px">排名</th>
+                            <th>芯线规格</th>
+                            <th>样品总数</th>
+                            <th>问题样品数</th>
+                            <th>问题率</th>
+                            <th>烟量偏高</th>
+                            <th>温度偏高</th>
+                            <th>累计问题标记</th>
+                            <th>未处理告警</th>
+                            <th>涉及样品</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wickTbody"></tbody>
+                </table>
+                <div class="empty" id="wickEmpty" style="display:none">暂无芯线问题数据</div>
+            </div>
+        </div>
+
+        <!-- 未闭环事项 -->
+        <div class="tab-content" id="tab-unclosed">
+            <div class="table-wrap" style="box-shadow:none">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>优先级</th>
+                            <th>蜡样编号</th>
+                            <th>测试批次</th>
+                            <th>香型/杯型</th>
+                            <th>芯线规格</th>
+                            <th>责任人</th>
+                            <th>异常原因</th>
+                            <th>蜡样状态</th>
+                            <th>距最近测试</th>
+                            <th>复测计划</th>
+                            <th>芯线告警</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="unclosedTbody"></tbody>
+                </table>
+                <div class="empty" id="unclosedEmpty" style="display:none">暂无不闭环事项 🎉</div>
+                <div class="pagination" id="unclosedPagination"></div>
+            </div>
+        </div>
+
+        <!-- 已处理记录 -->
+        <div class="tab-content" id="tab-closed">
+            <div class="table-wrap" style="box-shadow:none">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>蜡样编号</th>
+                            <th>测试批次</th>
+                            <th>香型</th>
+                            <th>杯型</th>
+                            <th>芯线规格</th>
+                            <th>责任人</th>
+                            <th>处理结论</th>
+                            <th>处理人</th>
+                            <th>处理时间</th>
+                            <th>关联测试轮次</th>
+                            <th>处理备注</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="closedTbody"></tbody>
+                </table>
+                <div class="empty" id="closedEmpty" style="display:none">暂无已处理记录</div>
+                <div class="pagination" id="closedPagination"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 详情模态框 -->
+<div class="modal-mask" id="detailModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">蜡样完整测试与处置链路</span>
+            <button class="modal-close" onclick="closeModal('detailModal')">&times;</button>
+        </div>
+        <div class="modal-body" id="detailBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-default" onclick="closeModal('detailModal')">关闭</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = '/api';
+const PAGE_SIZE = 10;
+let abnormalPage = 1, unclosedPage = 1, closedPage = 1;
+let abnormalTotal = 0, unclosedTotal = 0, closedTotal = 0;
+
+async function fetchJson(url) {
+    const r = await fetch(API + url);
+    if (!r.ok) throw new Error('请求失败');
+    return r.json();
+}
+
+function buildQueryString() {
+    const params = new URLSearchParams();
+    const mappings = [
+        ['f_testBatch', 'test_batch'],
+        ['f_fragrance', 'fragrance_code'],
+        ['f_cupType', 'cup_type'],
+        ['f_wickSpec', 'wick_spec'],
+        ['f_responsible', 'responsible_person'],
+        ['f_status', 'status'],
+        ['f_processingStatus', 'processing_status'],
+    ];
+    mappings.forEach(([id, key]) => {
+        const v = document.getElementById(id).value;
+        if (v) params.append(key, v);
+    });
+    const abTypeSel = document.getElementById('f_abnormalType');
+    for (const opt of abTypeSel.selectedOptions) {
+        if (opt.value) params.append('abnormal_type', opt.value);
+    }
+    const df = document.getElementById('f_dateFrom').value;
+    const dt = document.getElementById('f_dateTo').value;
+    if (df) params.append('date_from', df);
+    if (dt) params.append('date_to', dt);
+    return params.toString();
+}
+
+function fmtDate(dt) {
+    if (!dt) return '-';
+    const d = new Date(dt);
+    const pad = n => n < 10 ? '0'+n : n;
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fmtDateShort(dt) {
+    if (!dt) return '-';
+    const d = new Date(dt);
+    const pad = n => n < 10 ? '0'+n : n;
+    return `${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
+function statusTag(s) {
+    const map = {
+        'pending_proofing': ['待打样', 'tag-slate'],
+        'pending_test': ['待测试', 'tag-slate'],
+        'in_test': ['测试中', 'tag-blue'],
+        'pending_retest': ['待复测', 'tag-amber'],
+        'need_reform': ['需改配', 'tag-red'],
+        'version_ready': ['可归入版本库', 'tag-emerald'],
+    };
+    const [label, cls] = map[s] || [s, 'tag-slate'];
+    return `<span class="tag ${cls}">${label}</span>`;
+}
+
+function closureTag(closed, hasClosure) {
+    if (closed) return '<span class="tag tag-emerald">已闭环</span>';
+    if (hasClosure) return '<span class="tag tag-amber">处理中</span>';
+    return '<span class="tag tag-red">未处理</span>';
+}
+
+/* ============ 加载筛选选项 ============ */
+async function loadOptions() {
+    try {
+        const opts = await fetchJson('/review/options/');
+        const fillSelect = (id, list, placeholder) => {
+            const sel = document.getElementById(id);
+            const cur = sel.value;
+            sel.innerHTML = `<option value="">${placeholder}</option>` +
+                list.map(v => `<option value="${v}">${v}</option>`).join('');
+            sel.value = cur;
+        };
+        fillSelect('f_testBatch', opts.test_batches, '全部批次');
+        fillSelect('f_fragrance', opts.fragrance_codes, '全部香型');
+        fillSelect('f_cupType', opts.cup_types, '全部杯型');
+        fillSelect('f_wickSpec', opts.wick_specs, '全部芯线');
+        fillSelect('f_responsible', opts.responsible_persons, '全部责任人');
+
+        const abSel = document.getElementById('f_abnormalType');
+        abSel.innerHTML = opts.abnormal_type_options.map(o =>
+            `<option value="${o.value}">${o.label}</option>`
+        ).join('');
+
+        const psSel = document.getElementById('f_processingStatus');
+        psSel.innerHTML = '<option value="">全部</option>' +
+            opts.processing_status_options.map(o =>
+                `<option value="${o.value}">${o.label}</option>`
+            ).join('');
+
+        const stSel = document.getElementById('f_status');
+        stSel.innerHTML = '<option value="">全部</option>' +
+            opts.status_options.map(o =>
+                `<option value="${o.value}">${o.label}</option>`
+            ).join('');
+    } catch (e) { console.error(e); }
+}
+
+/* ============ 加载汇总统计 ============ */
+async function loadSummary() {
+    const qs = buildQueryString();
+    try {
+        const s = await fetchJson('/review/summary/' + (qs ? '?' + qs : ''));
+        const cards = [
+            { cls: 'stat-blue', label: '蜡样总数', val: s.total_samples, sub: `共 ${s.total_tests} 次测试` },
+            { cls: 'stat-red', label: '异常样品数', val: s.abnormal_sample_count, sub: `异常率 ${s.abnormal_rate}% · ${s.abnormal_test_count}次异常` },
+            { cls: 'stat-amber', label: '待复测', val: s.pending_retest_count, sub: '需安排复测跟进' },
+            { cls: 'stat-purple', label: '需改配', val: s.need_reform_count, sub: '需调整配方或芯线' },
+            { cls: 'stat-emerald', label: '已闭环', val: s.closed_count, sub: `闭环率 ${s.closure_rate}% · 待闭环 ${s.unclosed_count}` },
+            { cls: 'stat-slate', label: '复测计划', val: s.retest_plans_total, sub: `完成${s.retest_plans_completed}·待办${s.retest_plans_pending}·超期${s.retest_plans_overdue}` },
+        ];
+        document.getElementById('statsGrid').innerHTML = cards.map(c => `
+            <div class="stat-card ${c.cls}">
+                <div class="stat-label">${c.label}</div>
+                <div class="stat-value">${c.val}</div>
+                <div class="stat-sub">${c.sub}</div>
+            </div>
+        `).join('');
+
+        renderAbnormalDonut(s.by_abnormal_type);
+        renderStatusBar(s.by_status);
+        renderFragranceBars(s.by_fragrance);
+        renderResponsibleBars(s.by_responsible);
+    } catch (e) { console.error(e); }
+}
+
+function renderAbnormalDonut(data) {
+    const total = data.reduce((s, d) => s + d.count, 0);
+    document.getElementById('donutNum').textContent = total;
+    const colors = { smoke_high: '#ef4444', temp_high: '#f59e0b', temp_low: '#3b82f6', abnormal_desc: '#8b5cf6' };
+    if (total === 0) {
+        document.getElementById('abnormalDonut').style.background = 'conic-gradient(#e2e8f0 0% 100%)';
+        document.getElementById('abnormalLegend').innerHTML = '<div style="color:#94a3b8;font-size:12px">暂无异常数据</div>';
+        return;
+    }
+    let acc = 0;
+    const stops = data.map(d => {
+        const start = (acc / total * 100).toFixed(2);
+        acc += d.count;
+        const end = (acc / total * 100).toFixed(2);
+        return `${colors[d.value] || '#64748b'} ${start}% ${end}%`;
+    }).join(', ');
+    document.getElementById('abnormalDonut').style.background = `conic-gradient(${stops})`;
+    const donutEl = document.getElementById('abnormalDonut');
+    const existingHole = donutEl.querySelector('.donut-hole');
+    if (!donutEl.dataset.holeSet) {
+        donutEl.style.setProperty('--hole-size', '62%');
+        donutEl.style.boxShadow = 'inset 0 0 0 50px white';
+        donutEl.dataset.holeSet = '1';
+    }
+    document.getElementById('abnormalLegend').innerHTML = data.map(d => {
+        const pct = total > 0 ? (d.count / total * 100).toFixed(1) : 0;
+        return `
+            <div class="donut-legend-item">
+                <span class="donut-legend-color" style="background:${colors[d.value] || '#64748b'}"></span>
+                <span class="donut-legend-name">${d.label}</span>
+                <span class="donut-legend-val">${d.count} (${pct}%)</span>
+            </div>`;
+    }).join('');
+}
+
+function renderStatusBar(data) {
+    if (!data || !data.length) {
+        document.getElementById('statusBarChart').innerHTML = '<div class="empty">暂无数据</div>';
+        return;
+    }
+    const max = Math.max(1, ...data.map(d => d.count));
+    const colors = { pending_proofing:'#94a3b8', pending_test:'#64748b', in_test:'#3b82f6', pending_retest:'#f59e0b', need_reform:'#ef4444', version_ready:'#10b981' };
+    document.getElementById('statusBarChart').innerHTML = data.map(d => {
+        const pct = Math.round(d.count / max * 100);
+        return `
+            <div class="bar-item">
+                <span class="bar-label">${d.label}</span>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width:${pct}%;background:${colors[d.value] || '#64748b'}"></div>
+                </div>
+                <span class="bar-value">${d.count}</span>
+            </div>`;
+    }).join('');
+}
+
+function renderFragranceBars(data) {
+    if (!data || !data.length) {
+        document.getElementById('fragranceBarChart').innerHTML = '<div class="empty">暂无数据</div>';
+        return;
+    }
+    const max = Math.max(1, ...data.map(d => d.count));
+    const palette = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#84cc16', '#f97316', '#6366f1'];
+    document.getElementById('fragranceBarChart').innerHTML = data.map((d, i) => {
+        const pct = Math.round(d.count / max * 100);
+        return `
+            <div class="bar-item">
+                <span class="bar-label">${d.fragrance_code}</span>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width:${pct}%;background:${palette[i % palette.length]}"></div>
+                </div>
+                <span class="bar-value">${d.count}</span>
+            </div>`;
+    }).join('');
+}
+
+function renderResponsibleBars(data) {
+    if (!data || !data.length) {
+        document.getElementById('responsibleBarChart').innerHTML = '<div class="empty">暂无数据</div>';
+        return;
+    }
+    const max = Math.max(1, ...data.map(d => d.count));
+    const palette = ['#06b6d4', '#10b981', '#84cc16', '#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#f59e0b', '#ef4444', '#6366f1'];
+    document.getElementById('responsibleBarChart').innerHTML = data.map((d, i) => {
+        const pct = Math.round(d.count / max * 100);
+        return `
+            <div class="bar-item">
+                <span class="bar-label">${d.responsible_person}</span>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width:${pct}%;background:${palette[i % palette.length]}"></div>
+                </div>
+                <span class="bar-value">${d.count}</span>
+            </div>`;
+    }).join('');
+}
+
+/* ============ Tab切换 ============ */
+function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
+}
+
+/* ============ 异常样品清单 ============ */
+async function loadAbnormalSamples() {
+    const qs = buildQueryString();
+    const pageQs = qs ? `${qs}&page=${abnormalPage}&page_size=${PAGE_SIZE}` : `page=${abnormalPage}&page_size=${PAGE_SIZE}`;
+    try {
+        const data = await fetchJson('/review/abnormal-samples/?' + pageQs);
+        const list = data.results || [];
+        abnormalTotal = data.count || list.length;
+        document.getElementById('tabBadgeAbnormal').textContent = abnormalTotal;
+        renderAbnormalSamples(list);
+        renderPagination('abnormalPagination', abnormalTotal, abnormalPage, (p) => { abnormalPage = p; loadAbnormalSamples(); });
+    } catch (e) { console.error(e); }
+}
+
+function renderAbnormalSamples(list) {
+    const tbody = document.getElementById('abnormalTbody');
+    const empty = document.getElementById('abnormalEmpty');
+    if (!list || !list.length) {
+        tbody.innerHTML = ''; empty.style.display = 'block'; return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = list.map(s => {
+        const abnormalHtml = (s.abnormal_types || []).map(t => {
+            const cls = t === '烟量偏高' ? 'tag-red' : t === '杯壁温度偏高' ? 'tag-amber' : t === '杯壁温度偏低' ? 'tag-blue' : 'tag-purple';
+            return `<span class="tag ${cls}">${t}</span>`;
+        }).join(' ');
+        return `
+        <tr>
+            <td><span class="link-text" onclick="showSampleDetail(${s.id})">${s.sample_code}</span></td>
+            <td>${s.test_batch}</td>
+            <td>${s.fragrance_code}</td>
+            <td>${s.cup_type}</td>
+            <td>${s.wick_spec}</td>
+            <td>${s.responsible_person}</td>
+            <td>${statusTag(s.status)}</td>
+            <td>${abnormalHtml || '-'}</td>
+            <td>${s.abnormal_count > 0 ? `<span class="tag tag-red">${s.abnormal_count}次</span>` : s.abnormal_count}</td>
+            <td>${fmtDateShort(s.latest_test_time)}</td>
+            <td>${s.has_wick_alert ? '<span class="tag tag-red">⚠ 有关联</span>' : '<span class="tag tag-emerald">无</span>'}</td>
+            <td>${closureTag(s.is_closed, s.has_closure)}</td>
+            <td><button class="btn btn-sm btn-primary" onclick="showSampleDetail(${s.id})">查看链路</button></td>
+        </tr>`;
+    }).join('');
+}
+
+/* ============ 问题芯线排行 ============ */
+async function loadWickRanking() {
+    const qs = buildQueryString();
+    try {
+        const data = await fetchJson('/review/wick-ranking/' + (qs ? '?' + qs : ''));
+        const list = data.results || [];
+        document.getElementById('tabBadgeWick').textContent = data.count || list.length;
+        renderWickRanking(list);
+    } catch (e) { console.error(e); }
+}
+
+function renderWickRanking(list) {
+    const tbody = document.getElementById('wickTbody');
+    const empty = document.getElementById('wickEmpty');
+    if (!list || !list.length) {
+        tbody.innerHTML = ''; empty.style.display = 'block'; return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = list.map((w, i) => {
+        const rateCls = w.problem_rate >= 50 ? 'tag-red' : w.problem_rate >= 30 ? 'tag-amber' : 'tag-blue';
+        const samplesHtml = (w.affected_samples || []).slice(0, 4).map(s =>
+            `<span class="tag tag-slate" title="${s.test_batch}">${s.sample_code}</span>`
+        ).join('');
+        const more = (w.affected_samples || []).length > 4 ? `<span class="tag tag-slate">+${w.affected_samples.length - 4}</span>` : '';
+        return `
+        <tr>
+            <td><strong style="color:${i < 3 ? '#ef4444' : '#64748b'}">#${i + 1}</strong></td>
+            <td><strong>${w.wick_spec}</strong></td>
+            <td>${w.total_samples}</td>
+            <td><strong style="color:#ef4444">${w.problem_sample_count}</strong></td>
+            <td><span class="tag ${rateCls}">${w.problem_rate}%</span></td>
+            <td>${w.smoke_high_count > 0 ? `<span class="tag tag-red">${w.smoke_high_count}</span>` : '-'}</td>
+            <td>${w.temp_high_count > 0 ? `<span class="tag tag-amber">${w.temp_high_count}</span>` : '-'}</td>
+            <td>${w.total_problem_flags}</td>
+            <td>${w.has_unresolved_alert ? '<span class="tag tag-red">未处理</span>' : '<span class="tag tag-emerald">无</span>'}</td>
+            <td style="max-width:240px">${samplesHtml}${more}</td>
+        </tr>`;
+    }).join('');
+}
+
+/* ============ 未闭环事项 ============ */
+async function loadUnclosedItems() {
+    const qs = buildQueryString();
+    const pageQs = qs ? `${qs}&page=${unclosedPage}&page_size=${PAGE_SIZE}` : `page=${unclosedPage}&page_size=${PAGE_SIZE}`;
+    try {
+        const data = await fetchJson('/review/unclosed/?' + pageQs);
+        const list = data.results || [];
+        unclosedTotal = data.count || list.length;
+        document.getElementById('tabBadgeUnclosed').textContent = unclosedTotal;
+        renderUnclosedItems(list);
+        renderPagination('unclosedPagination', unclosedTotal, unclosedPage, (p) => { unclosedPage = p; loadUnclosedItems(); });
+    } catch (e) { console.error(e); }
+}
+
+function renderUnclosedItems(list) {
+    const tbody = document.getElementById('unclosedTbody');
+    const empty = document.getElementById('unclosedEmpty');
+    if (!list || !list.length) {
+        tbody.innerHTML = ''; empty.style.display = 'block'; return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = list.map(u => {
+        let priority = 'p-low', priorityLabel = '低';
+        if (u.retest_overdue) { priority = 'p-high'; priorityLabel = '紧急'; }
+        else if ((u.has_wick_alert && !u.has_retest_plan) || (u.days_since_last_test != null && u.days_since_last_test > 14)) {
+            priority = 'p-high'; priorityLabel = '高';
+        } else if (u.has_wick_alert || !u.has_retest_plan || (u.days_since_last_test != null && u.days_since_last_test > 7)) {
+            priority = 'p-mid'; priorityLabel = '中';
+        }
+        const planHtml = u.has_retest_plan
+            ? `<span class="tag ${u.retest_overdue ? 'tag-red' : 'tag-blue'}">${u.retest_plan_status_display || '已有'}</span>
+               <div style="font-size:10px;color:#94a3b8;margin-top:2px">${fmtDateShort(u.planned_retest_time)}</div>`
+            : '<span class="tag tag-red">未创建</span>';
+        return `
+        <tr>
+            <td><span class="priority-dot ${priority}"></span><span class="tag ${priority === 'p-high' ? 'tag-red' : priority === 'p-mid' ? 'tag-amber' : 'tag-emerald'}">${priorityLabel}</span></td>
+            <td><span class="link-text" onclick="showSampleDetail(${u.id})">${u.sample_code}</span></td>
+            <td>${u.test_batch}</td>
+            <td>${u.fragrance_code} / ${u.cup_type}</td>
+            <td>${u.wick_spec}</td>
+            <td>${u.responsible_person}</td>
+            <td style="max-width:180px">${u.abnormal_reason}</td>
+            <td>${statusTag(u.status)}${u.retest_overdue ? ' <span class="tag tag-red">超期</span>' : ''}</td>
+            <td>${u.days_since_last_test != null ? `<span class="${u.days_since_last_test > 14 ? 'tag-red' : u.days_since_last_test > 7 ? 'tag-amber' : ''}" style="font-weight:600">${u.days_since_last_test}天前</span>` : '-'}</td>
+            <td>${planHtml}</td>
+            <td>${u.has_wick_alert ? '<span class="tag tag-red">⚠ 有关联</span>' : '<span class="tag tag-emerald">无</span>'}</td>
+            <td><button class="btn btn-sm btn-primary" onclick="showSampleDetail(${u.id})">查看</button></td>
+        </tr>`;
+    }).join('');
+}
+
+/* ============ 已处理记录 ============ */
+async function loadClosedRecords() {
+    const qs = buildQueryString();
+    const pageQs = qs ? `${qs}&page=${closedPage}&page_size=${PAGE_SIZE}` : `page=${closedPage}&page_size=${PAGE_SIZE}`;
+    try {
+        const data = await fetchJson('/review/closed-records/?' + pageQs);
+        const list = data.results || [];
+        closedTotal = data.count || list.length;
+        document.getElementById('tabBadgeClosed').textContent = closedTotal;
+        renderClosedRecords(list);
+        renderPagination('closedPagination', closedTotal, closedPage, (p) => { closedPage = p; loadClosedRecords(); });
+    } catch (e) { console.error(e); }
+}
+
+function renderClosedRecords(list) {
+    const tbody = document.getElementById('closedTbody');
+    const empty = document.getElementById('closedEmpty');
+    if (!list || !list.length) {
+        tbody.innerHTML = ''; empty.style.display = 'block'; return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = list.map(c => {
+        const actionCls = c.action === 'confirm_version' ? 'tag-emerald' : c.action === 'transfer_reform' ? 'tag-purple' : 'tag-blue';
+        return `
+        <tr>
+            <td><span class="link-text" onclick="showSampleDetail(${c.sample_id})">${c.sample_code}</span></td>
+            <td>${c.test_batch}</td>
+            <td>${c.fragrance_code}</td>
+            <td>${c.cup_type}</td>
+            <td>${c.wick_spec}</td>
+            <td>${c.responsible_person}</td>
+            <td><span class="tag ${actionCls}">${c.action_display}</span></td>
+            <td>${c.handler || '-'}</td>
+            <td>${fmtDate(c.created_at)}</td>
+            <td>${c.burn_test_round != null ? `第${c.burn_test_round}轮` : '-'}</td>
+            <td style="max-width:220px" title="${c.remark || ''}">${(c.remark && c.remark.length > 30) ? c.remark.slice(0, 30) + '...' : c.remark || '-'}</td>
+            <td><button class="btn btn-sm btn-default" onclick="showSampleDetail(${c.sample_id})">详情</button></td>
+        </tr>`;
+    }).join('');
+}
+
+/* ============ 分页 ============ */
+function renderPagination(elId, total, currentPage, onChange) {
+    const el = document.getElementById(elId);
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    let html = `<button class="page-btn" ${currentPage <= 1 ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''} onclick="(${onChange})(${currentPage - 1})">上一页</button>`;
+    const maxShow = 5;
+    let start = Math.max(1, currentPage - 2);
+    let end = Math.min(totalPages, start + maxShow - 1);
+    start = Math.max(1, end - maxShow + 1);
+    for (let i = start; i <= end; i++) {
+        html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="window.__pg_${elId} && window.__pg_${elId}(${i})">${i}</button>`;
+    }
+    html += `<span class="page-info">${currentPage}/${totalPages} 共 ${total} 条</span>`;
+    html += `<button class="page-btn" ${currentPage >= totalPages ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''} onclick="window.__pg_${elId} && window.__pg_${elId}(${currentPage + 1})">下一页</button>`;
+    el.innerHTML = html;
+    window['__pg_' + elId] = onChange;
+}
+
+/* ============ 蜡样详情链路 ============ */
+async function showSampleDetail(id) {
+    try {
+        const d = await fetchJson('/review/sample-detail/' + id + '/');
+        const summary = d.summary || {};
+        const abnormalHtml = (summary.abnormal_types || []).map(t => {
+            const cls = t === '烟量偏高' ? 'tag-red' : t === '杯壁温度偏高' ? 'tag-amber' : t === '杯壁温度偏低' ? 'tag-blue' : 'tag-purple';
+            return `<span class="tag ${cls}">${t}</span>`;
+        }).join(' ') || '<span style="color:#94a3b8">无异常</span>';
+
+        const wickAlertHtml = d.wick_alerts && d.wick_alerts.length
+            ? `<ul class="alert-list">${d.wick_alerts.map(a => `
+                <li class="alert-item">
+                    <strong>${a.test_batch} / ${a.wick_spec}</strong>：
+                    ${a.problem_count}个问题样品，涉及 ${(a.affected_samples || []).join('、') || '无'}
+                    ${a.note ? `<br><span style="opacity:0.85">备注：${a.note}</span>` : ''}
+                    ${a.resolved ? '<span class="tag tag-emerald" style="margin-left:6px">已处理</span>' : '<span class="tag tag-red" style="margin-left:6px">未处理</span>'}
+                </li>`).join('')}</ul>`
+            : '<div style="color:#67c23a;font-size:12px;padding:8px 0">✓ 暂无关联芯线告警</div>';
+
+        const closureHtml = d.closure_history && d.closure_history.length
+            ? d.closure_history.map(h => `
+                <div class="closure-history-item">
+                    <div class="closure-head">
+                        <span>${h.action_display || h.action}${h.burn_test ? ` (第${h.burn_test.test_round}轮)` : ''}</span>
+                        <span style="color:#94a3b8;font-size:11px">${fmtDate(h.created_at)}${h.handler ? ' · ' + h.handler : ''}</span>
+                    </div>
+                    ${h.remark ? `<div style="color:#64748b;margin-top:4px">${h.remark}</div>` : ''}
+                </div>`).join('')
+            : '<div style="color:#94a3b8;font-size:12px;padding:10px 0">暂无处理记录</div>';
+
+        const timelineItems = [];
+        (d.burn_tests || []).forEach(t => {
+            timelineItems.push({
+                type: t.is_retest ? 'retest' : 'test',
+                time: t.test_time,
+                sortTime: new Date(t.test_time).getTime(),
+                html: `
+                <div class="timeline-item">
+                    <div class="timeline-dot ${t.is_retest ? 'retest' : ''}">${t.test_round}</div>
+                    <div class="timeline-body">
+                        <div class="timeline-head">
+                            <span class="timeline-title">第${t.test_round}轮燃烧测试${t.is_retest ? '（复测）' : ''}</span>
+                            <span class="timeline-time">${fmtDate(t.test_time)}${t.tested_by ? ' · ' + t.tested_by : ''}</span>
+                        </div>
+                        <div class="test-metrics">
+                            <div class="metric-box">
+                                <div class="metric-label">燃烧时长</div>
+                                <div class="metric-value">${t.burn_duration_minutes != null ? t.burn_duration_minutes + ' min' : '-'}</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">烟量等级</div>
+                                <div class="metric-value ${(t.auto_flags && t.auto_flags.smoke_high) ? 'abnormal' : ''}">${t.smoke_level_display || '-'}</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">杯壁温度</div>
+                                <div class="metric-value ${(t.auto_flags && (t.auto_flags.temp_high || t.auto_flags.temp_low)) ? 'abnormal' : ''}">${t.cup_wall_temp != null ? t.cup_wall_temp + ' ℃' : '-'}</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">熔池直径</div>
+                                <div class="metric-value">${t.melt_pool_diameter != null ? t.melt_pool_diameter + ' cm' : '-'}</div>
+                            </div>
+                        </div>
+                        ${t.abnormal_type_labels && t.abnormal_type_labels.length ? `
+                            <div class="abnormal-tag-list">${t.abnormal_type_labels.map(l => {
+                                const cls = l === '烟量偏高' ? 'tag-red' : l === '杯壁温度偏高' ? 'tag-amber' : l === '杯壁温度偏低' ? 'tag-blue' : 'tag-purple';
+                                return `<span class="tag ${cls}">${l}</span>`;
+                            }).join(' ')}</div>` : ''}
+                        ${t.auto_warnings && t.auto_warnings.length ? `
+                            <div style="margin-top:8px;padding:8px 10px;background:#fef2f2;border-radius:4px;font-size:11px;color:#dc2626">
+                                ${t.auto_warnings.map(w => `⚠ ${w}`).join('<br>')}
+                            </div>` : ''}
+                        ${t.abnormal_desc ? `<div class="timeline-content" style="margin-top:6px"><strong>异常描述：</strong>${t.abnormal_desc}</div>` : ''}
+                        ${t.retest_suggestion ? `<div class="timeline-content" style="margin-top:4px"><strong>复测建议：</strong>${t.retest_suggestion}</div>` : ''}
+                        ${t.enter_next_round != null ? `<div class="timeline-content" style="margin-top:4px;color:#475569">进入下一轮：${t.enter_next_round ? '<span style="color:#059669">是</span>' : '<span style="color:#dc2626">否</span>'}</div>` : ''}
+                    </div>
+                </div>`
+            });
+        });
+        (d.retest_plans || []).forEach(p => {
+            const execHtml = (p.executions || []).map(e => `
+                <div class="execution-item">
+                    <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px">
+                        <span>✓ 执行记录${e.closure_action ? ` · ${e.closure_action_display}` : ''}</span>
+                        <span>${fmtDate(e.actual_retest_time)}${e.executed_by ? ' · ' + e.executed_by : ''}</span>
+                    </div>
+                    ${e.result_description ? `<div style="color:#475569;font-size:11px;margin-bottom:4px">${e.result_description}</div>` : ''}
+                    ${e.closure_remark ? `<div style="color:#059669;font-size:11px">结论备注：${e.closure_remark}</div>` : ''}
+                </div>`).join('');
+            timelineItems.push({
+                type: 'plan',
+                time: p.created_at,
+                sortTime: new Date(p.created_at).getTime(),
+                html: `
+                <div class="timeline-item">
+                    <div class="timeline-dot plan">P</div>
+                    <div class="timeline-body">
+                        <div class="timeline-head">
+                            <span class="timeline-title">复测计划：${p.plan_no}</span>
+                            <span class="timeline-time">创建：${fmtDate(p.created_at)}</span>
+                        </div>
+                        <div class="plan-card">
+                            <div class="plan-head">
+                                <span class="plan-no">${p.plan_status_display || p.plan_status}${p.is_overdue ? '<span class="tag tag-red" style="margin-left:6px">超期</span>' : ''}</span>
+                                <span style="font-size:11px;color:#64748b">计划时间：${fmtDate(p.planned_retest_time)} · 负责人：${p.responsible_person}</span>
+                            </div>
+                            <div style="font-size:11px;color:#64748b;margin-top:4px">
+                                来源：${p.source_reason_display || p.source_reason}
+                            </div>
+                            ${p.retest_goal ? `<div style="font-size:11px;color:#475569;margin-top:4px">目标：${p.retest_goal}</div>` : ''}
+                            ${p.attention_notes ? `<div style="font-size:11px;color:#d97706;margin-top:4px">⚠ 注意：${p.attention_notes}</div>` : ''}
+                            ${execHtml}
+                        </div>
+                    </div>
+                </div>`
+            });
+        });
+        (d.closure_history || []).forEach(h => {
+            timelineItems.push({
+                type: 'closure',
+                time: h.created_at,
+                sortTime: new Date(h.created_at).getTime(),
+                html: `
+                <div class="timeline-item">
+                    <div class="timeline-dot closure">✓</div>
+                    <div class="timeline-body">
+                        <div class="timeline-head">
+                            <span class="timeline-title">闭环处理：${h.action_display || h.action}</span>
+                            <span class="timeline-time">${fmtDate(h.created_at)}${h.handler ? ' · ' + h.handler : ''}</span>
+                        </div>
+                        ${h.remark ? `<div class="timeline-content">${h.remark}</div>` : ''}
+                    </div>
+                </div>`
+            });
+        });
+        timelineItems.sort((a, b) => a.sortTime - b.sortTime);
+        const timelineHtml = timelineItems.length ? timelineItems.map(i => i.html).join('') : '<div style="color:#94a3b8;font-size:12px;padding:20px;text-align:center">暂无测试与处置记录</div>';
+
+        document.getElementById('detailBody').innerHTML = `
+            <div class="detail-summary">
+                <div class="summary-title">蜡样概览 - ${d.sample_code}</div>
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <div class="summary-item-label">总测试轮数</div>
+                        <div class="summary-item-value">${summary.total_tests || 0}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-item-label">异常次数</div>
+                        <div class="summary-item-value" style="color:${summary.abnormal_tests ? '#ef4444' : '#10b981'}">${summary.abnormal_tests || 0}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-item-label">异常类型</div>
+                        <div class="summary-item-value" style="font-size:12px">${abnormalHtml}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-item-label">闭环状态</div>
+                        <div class="summary-item-value">${summary.is_closed ? '<span class="tag tag-emerald">已闭环</span>' : summary.has_closure ? '<span class="tag tag-amber">处理中</span>' : '<span class="tag tag-red">未处理</span>'}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="info-grid">
+                <div class="info-row"><span class="info-label">测试批次</span><span class="info-value">${d.test_batch}</span></div>
+                <div class="info-row"><span class="info-label">香型代号</span><span class="info-value">${d.fragrance_code}</span></div>
+                <div class="info-row"><span class="info-label">杯型</span><span class="info-value">${d.cup_type}</span></div>
+                <div class="info-row"><span class="info-label">芯线规格</span><span class="info-value">${d.wick_spec}</span></div>
+                <div class="info-row"><span class="info-label">责任人</span><span class="info-value">${d.responsible_person}</span></div>
+                <div class="info-row"><span class="info-label">蜡样状态</span><span class="info-value">${statusTag(d.status)}</span></div>
+                <div class="info-row"><span class="info-label">创建时间</span><span class="info-value">${fmtDate(d.created_at)}</span></div>
+                <div class="info-row"><span class="info-label">更新时间</span><span class="info-value">${fmtDate(d.updated_at)}</span></div>
+            </div>
+            ${d.remarks ? `<div class="info-row" style="margin-bottom:14px"><span class="info-label">备注</span><span class="info-value">${d.remarks}</span></div>` : ''}
+
+            <div class="sub-card">
+                <div class="sub-card-title">关联芯线风险告警</div>
+                ${wickAlertHtml}
+            </div>
+
+            <div class="sub-card">
+                <div class="sub-card-title">历史闭环处理记录</div>
+                ${closureHtml}
+            </div>
+
+            <div class="sub-card">
+                <div class="sub-card-title">完整测试与处置时间线</div>
+                <div class="timeline">${timelineHtml}</div>
+            </div>
+        `;
+        openModal('detailModal');
+    } catch (e) { alert('加载详情失败：' + e.message); }
+}
+
+/* ============ Modal工具 ============ */
+function openModal(id) { document.getElementById(id).classList.add('show'); document.body.style.overflow='hidden'; }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); document.body.style.overflow=''; }
+document.querySelectorAll('.modal-mask').forEach(m => {
+    m.addEventListener('click', e => { if (e.target === m) { m.classList.remove('show'); document.body.style.overflow=''; } });
+});
+
+/* ============ 重置筛选 ============ */
+function resetFilters() {
+    ['f_testBatch', 'f_fragrance', 'f_cupType', 'f_wickSpec', 'f_responsible',
+     'f_processingStatus', 'f_status', 'f_dateFrom', 'f_dateTo'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
+    Array.from(document.getElementById('f_abnormalType').options).forEach(o => o.selected = false);
+    abnormalPage = 1; unclosedPage = 1; closedPage = 1;
+    loadAllData();
+}
+
+/* ============ 加载全部 ============ */
+function loadAllData() {
+    abnormalPage = 1; unclosedPage = 1; closedPage = 1;
+    loadSummary();
+    loadAbnormalSamples();
+    loadWickRanking();
+    loadUnclosedItems();
+    loadClosedRecords();
+}
+
+/* ============ 初始化 ============ */
+loadOptions().then(() => {
+    loadAllData();
+});
+</script>
+</body>
+</html>
